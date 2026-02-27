@@ -10,6 +10,20 @@ readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.9"
 dependencies = ["torch>=2.0"]
+keywords = ["pytorch", "torchscript", "pandas", "quantitative-finance", "custom-ops"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Office/Business :: Financial",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -17,5 +31,13 @@ dev = [
     "pandas",   # for reference / comparison tests
 ]
 
+[project.urls]
+Homepage = "https://github.com/xpandas-project/xpandas"
+Repository = "https://github.com/xpandas-project/xpandas"
+Issues = "https://github.com/xpandas-project/xpandas/issues"
+
 [tool.setuptools.packages.find]
 include = ["xpandas*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

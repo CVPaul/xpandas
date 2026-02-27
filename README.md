@@ -1,5 +1,7 @@
 # xpandas
 
+**English** | [中文](docs/README_zh.md)
+
 Pandas-like DataFrame operations implemented as **PyTorch custom ops**
 (`TORCH_LIBRARY`), enabling `torch.jit.script` compilation and pure C++
 inference via `torch::jit::load()`.
@@ -110,8 +112,8 @@ make -j
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for a step-by-step guide to adding a
-new op, using `rank` as a worked example.
+See [CONTRIBUTING.md](CONTRIBUTING.md) ([中文](docs/CONTRIBUTING_zh.md)) for a
+step-by-step guide to adding a new op, using `rank` as a worked example.
 
 ## License
 

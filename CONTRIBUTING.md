@@ -1,5 +1,7 @@
 # Contributing to xpandas
 
+**English** | [中文](docs/CONTRIBUTING_zh.md)
+
 This guide walks through adding a new custom op to xpandas, using **`rank`**
 as a complete worked example. By the end, your new op will be:
 

@@ -9,6 +9,9 @@
  * All ops produce NaN for positions where the window is not yet full
  * (i.e., the first `window-1` elements), matching pandas default
  * min_periods=window behavior.
+ *
+ * Optimized: uses raw data pointers instead of accessors; rolling_std uses
+ * an O(n) online algorithm instead of O(n*w) recomputation.
  */
 
 #include "ops.h"
@@ -29,12 +32,14 @@ at::Tensor rolling_sum(const at::Tensor& x, int64_t window) {
 
     if (n == 0) return result;
 
-    auto x_a = x.accessor<double, 1>();
-    auto r_a = result.accessor<double, 1>();
+    const double* px = x.data_ptr<double>();
+    double*       pr = result.data_ptr<double>();
+
+    constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 
     // Fill first window-1 positions with NaN
     for (int64_t i = 0; i < std::min(window - 1, n); ++i) {
-        r_a[i] = std::numeric_limits<double>::quiet_NaN();
+        pr[i] = NaN;
     }
 
     if (n < window) return result;
@@ -42,14 +47,14 @@ at::Tensor rolling_sum(const at::Tensor& x, int64_t window) {
     // Compute initial window sum
     double sum = 0.0;
     for (int64_t i = 0; i < window; ++i) {
-        sum += x_a[i];
+        sum += px[i];
     }
-    r_a[window - 1] = sum;
+    pr[window - 1] = sum;
 
     // Slide the window
     for (int64_t i = window; i < n; ++i) {
-        sum += x_a[i] - x_a[i - window];
-        r_a[i] = sum;
+        sum += px[i] - px[i - window];
+        pr[i] = sum;
     }
 
     return result;
@@ -66,25 +71,27 @@ at::Tensor rolling_mean(const at::Tensor& x, int64_t window) {
 
     if (n == 0) return result;
 
-    auto x_a = x.accessor<double, 1>();
-    auto r_a = result.accessor<double, 1>();
+    const double* px = x.data_ptr<double>();
+    double*       pr = result.data_ptr<double>();
+
+    constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+    const double dw = static_cast<double>(window);
 
     for (int64_t i = 0; i < std::min(window - 1, n); ++i) {
-        r_a[i] = std::numeric_limits<double>::quiet_NaN();
+        pr[i] = NaN;
     }
 
     if (n < window) return result;
 
     double sum = 0.0;
-    double dw = static_cast<double>(window);
     for (int64_t i = 0; i < window; ++i) {
-        sum += x_a[i];
+        sum += px[i];
     }
-    r_a[window - 1] = sum / dw;
+    pr[window - 1] = sum / dw;
 
     for (int64_t i = window; i < n; ++i) {
-        sum += x_a[i] - x_a[i - window];
-        r_a[i] = sum / dw;
+        sum += px[i] - px[i - window];
+        pr[i] = sum / dw;
     }
 
     return result;
@@ -101,50 +108,44 @@ at::Tensor rolling_std(const at::Tensor& x, int64_t window) {
 
     if (n == 0) return result;
 
-    auto x_a = x.accessor<double, 1>();
-    auto r_a = result.accessor<double, 1>();
+    const double* px = x.data_ptr<double>();
+    double*       pr = result.data_ptr<double>();
+
+    constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+    const double dw = static_cast<double>(window);
 
     for (int64_t i = 0; i < std::min(window - 1, n); ++i) {
-        r_a[i] = std::numeric_limits<double>::quiet_NaN();
+        pr[i] = NaN;
     }
 
     if (n < window) return result;
 
-    // Welford-style online computation for numerical stability
-    // For the initial window, compute mean and M2
+    // O(n) online rolling variance using sum and sum-of-squares.
+    // Variance = (sum_sq - sum*sum/w) / (w-1)  [Bessel's correction, ddof=1]
     double sum = 0.0;
+    double sum_sq = 0.0;
     for (int64_t i = 0; i < window; ++i) {
-        sum += x_a[i];
-    }
-    double mean = sum / static_cast<double>(window);
-
-    double m2 = 0.0;
-    for (int64_t i = 0; i < window; ++i) {
-        double d = x_a[i] - mean;
-        m2 += d * d;
+        sum    += px[i];
+        sum_sq += px[i] * px[i];
     }
 
-    double dw = static_cast<double>(window);
     if (window <= 1) {
-        r_a[window - 1] = std::numeric_limits<double>::quiet_NaN();
+        pr[window - 1] = NaN;
     } else {
-        r_a[window - 1] = std::sqrt(m2 / (dw - 1.0));
+        double var = (sum_sq - sum * sum / dw) / (dw - 1.0);
+        pr[window - 1] = std::sqrt(std::max(var, 0.0));
     }
 
-    // Slide the window: update sum, mean, and recompute variance
-    // (Using the two-pass approach for each slide to ensure numerical accuracy
-    //  is sufficient for typical quant data sizes. For very large windows,
-    //  an online algorithm could be used.)
+    // Slide the window
     for (int64_t i = window; i < n; ++i) {
-        sum += x_a[i] - x_a[i - window];
-        mean = sum / dw;
+        double x_old = px[i - window];
+        double x_new = px[i];
+        sum    += x_new - x_old;
+        sum_sq += x_new * x_new - x_old * x_old;
 
-        m2 = 0.0;
-        for (int64_t j = i - window + 1; j <= i; ++j) {
-            double d = x_a[j] - mean;
-            m2 += d * d;
-        }
-        r_a[i] = std::sqrt(m2 / (dw - 1.0));
+        double var = (sum_sq - sum * sum / dw) / (dw - 1.0);
+        // Guard against numerical noise producing tiny negative variance
+        pr[i] = std::sqrt(std::max(var, 0.0));
     }
 
     return result;

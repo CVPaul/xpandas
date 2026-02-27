@@ -12,6 +12,9 @@
  *   output: [4.0, 1.5, 3.0, 1.5]
  *
  * This op was added as a walkthrough example in CONTRIBUTING.md.
+ *
+ * Optimized: uses raw data pointers instead of accessors for better
+ * performance.
  */
 
 #include "ops.h"
@@ -33,13 +36,13 @@ at::Tensor rank(const at::Tensor& x) {
         return at::empty({0}, at::TensorOptions().dtype(at::kDouble));
     }
 
-    auto x_a = x.accessor<double, 1>();
+    const double* px = x.data_ptr<double>();
 
     // Build an index array and sort by value (NaN goes to end).
     std::vector<int64_t> idx(n);
     std::iota(idx.begin(), idx.end(), 0);
-    std::sort(idx.begin(), idx.end(), [&](int64_t a, int64_t b) {
-        double va = x_a[a], vb = x_a[b];
+    std::sort(idx.begin(), idx.end(), [px](int64_t a, int64_t b) {
+        double va = px[a], vb = px[b];
         // NaN sorts to the end
         if (std::isnan(va)) return false;
         if (std::isnan(vb)) return true;
@@ -47,24 +50,24 @@ at::Tensor rank(const at::Tensor& x) {
     });
 
     at::Tensor result = at::empty({n}, at::TensorOptions().dtype(at::kDouble));
-    auto r_a = result.accessor<double, 1>();
+    double* pr = result.data_ptr<double>();
 
     // Walk through sorted indices and assign average ranks to ties.
     int64_t i = 0;
     while (i < n) {
-        double val = x_a[idx[i]];
+        double val = px[idx[i]];
 
         // NaN values get NaN rank
         if (std::isnan(val)) {
             for (; i < n; ++i) {
-                r_a[idx[i]] = std::numeric_limits<double>::quiet_NaN();
+                pr[idx[i]] = std::numeric_limits<double>::quiet_NaN();
             }
             break;
         }
 
         // Find the run of identical values (ties)
         int64_t j = i + 1;
-        while (j < n && !std::isnan(x_a[idx[j]]) && x_a[idx[j]] == val) {
+        while (j < n && !std::isnan(px[idx[j]]) && px[idx[j]] == val) {
             ++j;
         }
 
@@ -72,7 +75,7 @@ at::Tensor rank(const at::Tensor& x) {
         double avg_rank = 0.5 * (static_cast<double>(i + 1) +
                                   static_cast<double>(j));
         for (int64_t k = i; k < j; ++k) {
-            r_a[idx[k]] = avg_rank;
+            pr[idx[k]] = avg_rank;
         }
 
         i = j;

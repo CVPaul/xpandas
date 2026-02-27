@@ -29,7 +29,7 @@ setup(
             name="xpandas._C",
             sources=cpp_sources,
             include_dirs=["xpandas/csrc/ops"],
-            extra_compile_args=[_abi_flag],
+            extra_compile_args=[_abi_flag, "-O2", "-march=native"],
         ),
     ],
     cmdclass={"build_ext": BuildExtension},

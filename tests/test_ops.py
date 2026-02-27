@@ -131,3 +131,133 @@ class TestRank:
         x = torch.tensor([42.0], dtype=torch.double)
         result = torch.ops.xpandas.rank(x)
         assert result.tolist() == [1.0]
+
+
+class TestToDatetime:
+    """Tests for torch.ops.xpandas.to_datetime."""
+
+    def test_seconds(self):
+        # 2024-01-15 00:00:00 UTC = 1705276800 epoch seconds
+        epochs = torch.tensor([1705276800], dtype=torch.long)
+        result = torch.ops.xpandas.to_datetime(epochs, "s")
+        assert result.dtype == torch.long
+        assert result[0].item() == 1705276800 * 1_000_000_000
+
+    def test_milliseconds(self):
+        epochs = torch.tensor([1705276800000], dtype=torch.long)
+        result = torch.ops.xpandas.to_datetime(epochs, "ms")
+        assert result[0].item() == 1705276800000 * 1_000_000
+
+    def test_microseconds(self):
+        epochs = torch.tensor([1705276800000000], dtype=torch.long)
+        result = torch.ops.xpandas.to_datetime(epochs, "us")
+        assert result[0].item() == 1705276800000000 * 1_000
+
+    def test_nanoseconds_passthrough(self):
+        ns_val = 1705276800 * 1_000_000_000
+        epochs = torch.tensor([ns_val], dtype=torch.long)
+        result = torch.ops.xpandas.to_datetime(epochs, "ns")
+        assert result[0].item() == ns_val
+
+    def test_float64_input(self):
+        epochs = torch.tensor([1705276800.5], dtype=torch.double)
+        result = torch.ops.xpandas.to_datetime(epochs, "s")
+        # truncates 0.5 toward zero, then multiplies
+        assert result[0].item() == 1705276800 * 1_000_000_000
+
+    def test_multiple_values(self):
+        epochs = torch.tensor([1000, 2000, 3000], dtype=torch.long)
+        result = torch.ops.xpandas.to_datetime(epochs, "s")
+        expected = [v * 1_000_000_000 for v in [1000, 2000, 3000]]
+        assert result.tolist() == expected
+
+    def test_empty(self):
+        epochs = torch.empty(0, dtype=torch.long)
+        result = torch.ops.xpandas.to_datetime(epochs, "s")
+        assert result.numel() == 0
+
+
+class TestDtFloor:
+    """Tests for torch.ops.xpandas.dt_floor."""
+
+    def test_floor_to_day(self):
+        # 2024-01-15 10:30:45 UTC = 1705314645 epoch seconds
+        ns = 1705314645 * 1_000_000_000
+        # 2024-01-15 00:00:00 UTC = 1705276800 epoch seconds
+        expected_ns = 1705276800 * 1_000_000_000
+        dt = torch.tensor([ns], dtype=torch.long)
+        interval_day = 86400 * 1_000_000_000  # 1D in ns
+        result = torch.ops.xpandas.dt_floor(dt, interval_day)
+        assert result[0].item() == expected_ns
+
+    def test_floor_to_hour(self):
+        # 10:30:45 -> floor to hour -> 10:00:00
+        base_day = 1705276800 * 1_000_000_000  # 2024-01-15 00:00:00
+        ns = base_day + (10 * 3600 + 30 * 60 + 45) * 1_000_000_000
+        expected_ns = base_day + 10 * 3600 * 1_000_000_000
+        dt = torch.tensor([ns], dtype=torch.long)
+        interval_hour = 3600 * 1_000_000_000  # 1h in ns
+        result = torch.ops.xpandas.dt_floor(dt, interval_hour)
+        assert result[0].item() == expected_ns
+
+    def test_floor_to_second(self):
+        # 1705314645.123456789 seconds -> floor to second
+        ns = 1705314645 * 1_000_000_000 + 123456789
+        expected_ns = 1705314645 * 1_000_000_000
+        dt = torch.tensor([ns], dtype=torch.long)
+        interval_sec = 1_000_000_000  # 1s in ns
+        result = torch.ops.xpandas.dt_floor(dt, interval_sec)
+        assert result[0].item() == expected_ns
+
+    def test_already_aligned(self):
+        # exact day boundary should be unchanged
+        ns = 1705276800 * 1_000_000_000
+        dt = torch.tensor([ns], dtype=torch.long)
+        interval_day = 86400 * 1_000_000_000
+        result = torch.ops.xpandas.dt_floor(dt, interval_day)
+        assert result[0].item() == ns
+
+    def test_multiple_values(self):
+        # two timestamps in same day, one in next day
+        day1 = 1705276800 * 1_000_000_000   # 2024-01-15
+        day2 = 1705363200 * 1_000_000_000   # 2024-01-16
+        ts = torch.tensor([
+            day1 + 3600 * 1_000_000_000,     # 01:00 on day1
+            day1 + 7200 * 1_000_000_000,     # 02:00 on day1
+            day2 + 1800 * 1_000_000_000,     # 00:30 on day2
+        ], dtype=torch.long)
+        interval_day = 86400 * 1_000_000_000
+        result = torch.ops.xpandas.dt_floor(ts, interval_day)
+        assert result.tolist() == [day1, day1, day2]
+
+    def test_empty(self):
+        dt = torch.empty(0, dtype=torch.long)
+        result = torch.ops.xpandas.dt_floor(dt, 1_000_000_000)
+        assert result.numel() == 0
+
+
+class TestToDatetimePythonWrapper:
+    """Tests for the xpandas.to_datetime / xpandas.dt_floor Python wrappers."""
+
+    def test_to_datetime_wrapper(self):
+        import xpandas
+        epochs = torch.tensor([1705276800], dtype=torch.long)
+        result = xpandas.to_datetime(epochs, unit="s")
+        assert result[0].item() == 1705276800 * 1_000_000_000
+
+    def test_dt_floor_wrapper(self):
+        import xpandas
+        ns = 1705314645 * 1_000_000_000
+        dt = torch.tensor([ns], dtype=torch.long)
+        result = xpandas.dt_floor(dt, freq="1D")
+        expected_ns = 1705276800 * 1_000_000_000
+        assert result[0].item() == expected_ns
+
+    def test_dt_floor_1h(self):
+        import xpandas
+        base_day = 1705276800 * 1_000_000_000
+        ns = base_day + (10 * 3600 + 30 * 60) * 1_000_000_000
+        dt = torch.tensor([ns], dtype=torch.long)
+        result = xpandas.dt_floor(dt, freq="1h")
+        expected = base_day + 10 * 3600 * 1_000_000_000
+        assert result[0].item() == expected

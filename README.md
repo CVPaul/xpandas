@@ -49,6 +49,7 @@ xpandas/
     lookup.cpp
     breakout_signal.cpp
     rank.cpp               # Example op (see CONTRIBUTING.md)
+    to_datetime.cpp        # to_datetime + dt_floor
 inference/
   main.cpp                 # Pure C++ inference driver
 examples/
@@ -109,6 +110,8 @@ make -j
 | `lookup` | `(Dict(str, Tensor) table, str key) -> Tensor` | `df['col']` |
 | `breakout_signal` | `(Tensor price, Tensor high, Tensor low) -> Tensor` | `(price > high).float() - (price < low).float()` |
 | `rank` | `(Tensor x) -> Tensor` | `series.rank(method='average')` |
+| `to_datetime` | `(Tensor epochs, str unit) -> Tensor` | `pd.to_datetime(series, unit=...)` |
+| `dt_floor` | `(Tensor dt_ns, int interval_ns) -> Tensor` | `series.dt.floor(freq)` |
 
 ## Contributing
 

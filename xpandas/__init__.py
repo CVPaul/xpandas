@@ -40,4 +40,60 @@ def concat(frames):
     raise NotImplementedError("concat of >1 frames not yet supported")
 
 
-__all__ = ["DataFrame", "concat"]
+# --------------------------------------------------------------------------
+# Datetime constants (nanoseconds) -- mirrors pandas offset aliases
+# --------------------------------------------------------------------------
+NS_PER_SECOND = 1_000_000_000
+NS_PER_MINUTE = 60 * NS_PER_SECOND
+NS_PER_HOUR   = 60 * NS_PER_MINUTE
+NS_PER_DAY    = 24 * NS_PER_HOUR
+
+_FREQ_TO_NS = {
+    "1s":   NS_PER_SECOND,
+    "1T":   NS_PER_MINUTE,   # pandas alias
+    "1min": NS_PER_MINUTE,
+    "1h":   NS_PER_HOUR,
+    "1H":   NS_PER_HOUR,     # pandas alias
+    "1D":   NS_PER_DAY,
+    "1d":   NS_PER_DAY,
+}
+
+
+def to_datetime(series, unit: str = "s"):
+    """Convert epoch timestamps to nanosecond epoch (int64 Tensor).
+
+    Drop-in replacement for ``pd.to_datetime(series, unit=unit)``.
+
+    Args:
+        series: Tensor of epoch timestamps (int64 or float64).
+        unit:   One of 's', 'ms', 'us', 'ns'.
+
+    Returns:
+        int64 Tensor of nanosecond-precision epoch timestamps.
+    """
+    return torch.ops.xpandas.to_datetime(series, unit)
+
+
+def dt_floor(dt_ns, freq: str):
+    """Floor nanosecond-epoch timestamps to the given frequency.
+
+    Drop-in replacement for ``series.dt.floor(freq)``.
+
+    Args:
+        dt_ns: int64 Tensor of nanosecond epoch timestamps
+               (as returned by ``to_datetime``).
+        freq:  Frequency string, e.g. '1D', '1h', '1min', '1s'.
+
+    Returns:
+        int64 Tensor of floored timestamps (can be used as groupby key).
+    """
+    if freq in _FREQ_TO_NS:
+        interval_ns = _FREQ_TO_NS[freq]
+    else:
+        raise ValueError(
+            f"Unsupported freq '{freq}'. Supported: {list(_FREQ_TO_NS.keys())}"
+        )
+    return torch.ops.xpandas.dt_floor(dt_ns, interval_ns)
+
+
+__all__ = ["DataFrame", "concat", "to_datetime", "dt_floor"]

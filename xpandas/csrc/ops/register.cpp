@@ -38,6 +38,10 @@ TORCH_LIBRARY(xpandas, m) {
 
     // --- statistical ---
     m.def("rank(Tensor x) -> Tensor");
+
+    // --- datetime ---
+    m.def("to_datetime(Tensor epochs, str unit) -> Tensor");
+    m.def("dt_floor(Tensor dt_ns, int interval_ns) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(xpandas, CPU, m) {
@@ -48,4 +52,6 @@ TORCH_LIBRARY_IMPL(xpandas, CPU, m) {
     // lookup is registered as catch-all in TORCH_LIBRARY above
     m.impl("breakout_signal",       &xpandas::breakout_signal);
     m.impl("rank",                  &xpandas::rank);
+    m.impl("to_datetime",           &xpandas::to_datetime);
+    m.impl("dt_floor",              &xpandas::dt_floor);
 }

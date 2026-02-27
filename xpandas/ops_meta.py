@@ -53,3 +53,13 @@ def breakout_signal_fake(price: Tensor, high: Tensor, low: Tensor) -> Tensor:
 @torch.library.register_fake("xpandas::rank")
 def rank_fake(x: Tensor) -> Tensor:
     return torch.empty_like(x, dtype=torch.double)
+
+
+@torch.library.register_fake("xpandas::to_datetime")
+def to_datetime_fake(epochs: Tensor, unit: str) -> Tensor:
+    return torch.empty_like(epochs, dtype=torch.long)
+
+
+@torch.library.register_fake("xpandas::dt_floor")
+def dt_floor_fake(dt_ns: Tensor, interval_ns: int) -> Tensor:
+    return torch.empty_like(dt_ns, dtype=torch.long)

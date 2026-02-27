@@ -40,4 +40,8 @@ at::Tensor breakout_signal(
 // rank.cpp
 at::Tensor rank(const at::Tensor& x);
 
+// to_datetime.cpp
+at::Tensor to_datetime(const at::Tensor& epochs, const std::string& unit);
+at::Tensor dt_floor(const at::Tensor& dt_ns, int64_t interval_ns);
+
 } // namespace xpandas

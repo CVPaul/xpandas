@@ -48,6 +48,14 @@ xpandas/
     breakout_signal.cpp
     rank.cpp               # 示例算子（参见 CONTRIBUTING_zh.md）
     to_datetime.cpp        # to_datetime + dt_floor
+    groupby_agg.cpp        # groupby_sum/mean/count/std
+    rolling.cpp            # rolling_sum/mean/std
+    shift.cpp              # shift（前移/后移）
+    fillna.cpp             # fillna
+    where.cpp              # where_, masked_fill
+    pct_change.cpp         # pct_change
+    cumulative.cpp         # cumsum, cumprod
+    clip.cpp               # clip
 inference/
   main.cpp                 # 纯 C++ 推理驱动程序
 examples/
@@ -73,8 +81,10 @@ docs/
 ### 安装（Python）
 
 ```bash
-pip install -e .
+pip install --no-build-isolation -e .
 ```
+
+> **注意：** 需要使用 `--no-build-isolation` 以确保 C++ 扩展与已安装的 PyTorch 使用相同的 ABI 编译。
 
 ### 运行测试
 
@@ -100,19 +110,101 @@ make -j
 # 输出: Signal: [+1.0, -1.0]
 ```
 
-## 可用算子
+## 可用算子（共 24 个）
+
+### DataFrame 工具
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `lookup` | `(Dict(str, Tensor) table, str key) -> Tensor` | `df['col']` |
+
+### 分组 / 聚合
 
 | 算子 | Schema | 对应 pandas 操作 |
 |------|--------|-----------------|
 | `groupby_resample_ohlc` | `(Tensor key, Tensor value) -> (Tensor, Tensor, Tensor, Tensor, Tensor)` | `df.groupby(key)[val].resample().{first,max,min,last}()` |
+| `groupby_sum` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].sum()` |
+| `groupby_mean` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].mean()` |
+| `groupby_count` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].count()` |
+| `groupby_std` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].std()` |
+
+### 逐元素比较
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
 | `compare_gt` | `(Tensor a, Tensor b) -> Tensor` | `series > series` |
 | `compare_lt` | `(Tensor a, Tensor b) -> Tensor` | `series < series` |
+
+### 类型转换
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
 | `bool_to_float` | `(Tensor x) -> Tensor` | `series.astype(float)` |
-| `lookup` | `(Dict(str, Tensor) table, str key) -> Tensor` | `df['col']` |
+
+### 融合信号
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
 | `breakout_signal` | `(Tensor price, Tensor high, Tensor low) -> Tensor` | `(price > high).float() - (price < low).float()` |
+
+### 统计
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
 | `rank` | `(Tensor x) -> Tensor` | `series.rank(method='average')` |
+
+### 日期时间
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
 | `to_datetime` | `(Tensor epochs, str unit) -> Tensor` | `pd.to_datetime(series, unit=...)` |
 | `dt_floor` | `(Tensor dt_ns, int interval_ns) -> Tensor` | `series.dt.floor(freq)` |
+
+### 滚动窗口
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `rolling_sum` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).sum()` |
+| `rolling_mean` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).mean()` |
+| `rolling_std` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).std()` |
+
+### 移位 / 滞后
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `shift` | `(Tensor x, int periods) -> Tensor` | `series.shift(periods)` |
+
+### NaN 处理
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `fillna` | `(Tensor x, float fill_value) -> Tensor` | `series.fillna(value)` |
+
+### 条件选择
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `where_` | `(Tensor cond, Tensor x, Tensor other) -> Tensor` | `series.where(cond, other)` |
+| `masked_fill` | `(Tensor x, Tensor mask, float fill_value) -> Tensor` | `series.mask(mask, value)` |
+
+### 百分比变化
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `pct_change` | `(Tensor x, int periods) -> Tensor` | `series.pct_change(periods)` |
+
+### 累积运算
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `cumsum` | `(Tensor x) -> Tensor` | `series.cumsum()` |
+| `cumprod` | `(Tensor x) -> Tensor` | `series.cumprod()` |
+
+### 裁剪
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `clip` | `(Tensor x, float lower, float upper) -> Tensor` | `series.clip(lower, upper)` |
 
 ## 技术细节
 

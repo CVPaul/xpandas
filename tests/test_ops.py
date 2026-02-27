@@ -261,3 +261,321 @@ class TestToDatetimePythonWrapper:
         result = xpandas.dt_floor(dt, freq="1h")
         expected = base_day + 10 * 3600 * 1_000_000_000
         assert result[0].item() == expected
+
+
+# =====================================================================
+# New ops tests
+# =====================================================================
+
+
+class TestGroupbySum:
+    """Tests for torch.ops.xpandas.groupby_sum."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 1, 1, 1], dtype=torch.long)
+        val = torch.tensor([1.0, 3.0, 2.0, 4.0, 6.0], dtype=torch.double)
+        keys, sums = torch.ops.xpandas.groupby_sum(key, val)
+        assert keys.tolist() == [0, 1]
+        assert sums.tolist() == [4.0, 12.0]
+
+    def test_single_group(self):
+        key = torch.tensor([0, 0, 0], dtype=torch.long)
+        val = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        keys, sums = torch.ops.xpandas.groupby_sum(key, val)
+        assert keys.tolist() == [0]
+        assert sums.tolist() == [6.0]
+
+    def test_empty(self):
+        key = torch.empty(0, dtype=torch.long)
+        val = torch.empty(0, dtype=torch.double)
+        keys, sums = torch.ops.xpandas.groupby_sum(key, val)
+        assert keys.numel() == 0
+
+
+class TestGroupbyMean:
+    """Tests for torch.ops.xpandas.groupby_mean."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 1, 1], dtype=torch.long)
+        val = torch.tensor([1.0, 3.0, 2.0, 4.0], dtype=torch.double)
+        keys, means = torch.ops.xpandas.groupby_mean(key, val)
+        assert keys.tolist() == [0, 1]
+        assert means.tolist() == [2.0, 3.0]
+
+    def test_single_element_groups(self):
+        key = torch.tensor([0, 1, 2], dtype=torch.long)
+        val = torch.tensor([10.0, 20.0, 30.0], dtype=torch.double)
+        keys, means = torch.ops.xpandas.groupby_mean(key, val)
+        assert means.tolist() == [10.0, 20.0, 30.0]
+
+
+class TestGroupbyCount:
+    """Tests for torch.ops.xpandas.groupby_count."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 1, 1, 1], dtype=torch.long)
+        val = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], dtype=torch.double)
+        keys, counts = torch.ops.xpandas.groupby_count(key, val)
+        assert keys.tolist() == [0, 1]
+        assert counts.tolist() == [2.0, 3.0]
+
+
+class TestGroupbyStd:
+    """Tests for torch.ops.xpandas.groupby_std."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.long)
+        val = torch.tensor([1.0, 2.0, 3.0, 10.0, 20.0, 30.0], dtype=torch.double)
+        keys, stds = torch.ops.xpandas.groupby_std(key, val)
+        assert keys.tolist() == [0, 1]
+        assert abs(stds[0].item() - 1.0) < 1e-10
+        assert abs(stds[1].item() - 10.0) < 1e-10
+
+    def test_single_element_nan(self):
+        key = torch.tensor([0], dtype=torch.long)
+        val = torch.tensor([5.0], dtype=torch.double)
+        keys, stds = torch.ops.xpandas.groupby_std(key, val)
+        assert math.isnan(stds[0].item())  # ddof=1, single element -> NaN
+
+
+class TestRollingSum:
+    """Tests for torch.ops.xpandas.rolling_sum."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_sum(x, 3)
+        assert math.isnan(result[0].item())
+        assert math.isnan(result[1].item())
+        assert result[2].item() == 6.0
+        assert result[3].item() == 9.0
+        assert result[4].item() == 12.0
+
+    def test_window_1(self):
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_sum(x, 1)
+        assert result.tolist() == [1.0, 2.0, 3.0]
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.rolling_sum(x, 3)
+        assert result.numel() == 0
+
+    def test_window_larger_than_input(self):
+        x = torch.tensor([1.0, 2.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_sum(x, 5)
+        assert all(math.isnan(v) for v in result.tolist())
+
+
+class TestRollingMean:
+    """Tests for torch.ops.xpandas.rolling_mean."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_mean(x, 3)
+        assert math.isnan(result[0].item())
+        assert math.isnan(result[1].item())
+        assert result[2].item() == 2.0
+        assert result[3].item() == 3.0
+        assert result[4].item() == 4.0
+
+    def test_window_1(self):
+        x = torch.tensor([10.0, 20.0, 30.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_mean(x, 1)
+        assert result.tolist() == [10.0, 20.0, 30.0]
+
+
+class TestRollingStd:
+    """Tests for torch.ops.xpandas.rolling_std."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_std(x, 3)
+        assert math.isnan(result[0].item())
+        assert math.isnan(result[1].item())
+        # std of [1,2,3] = 1.0 (ddof=1)
+        assert abs(result[2].item() - 1.0) < 1e-10
+        assert abs(result[3].item() - 1.0) < 1e-10
+        assert abs(result[4].item() - 1.0) < 1e-10
+
+    def test_window_1_nan(self):
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_std(x, 1)
+        # std with window=1 and ddof=1 -> NaN
+        assert all(math.isnan(v) for v in result.tolist())
+
+
+class TestShift:
+    """Tests for torch.ops.xpandas.shift."""
+
+    def test_shift_forward(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.shift(x, 1)
+        assert math.isnan(result[0].item())
+        assert result[1].item() == 1.0
+        assert result[2].item() == 2.0
+        assert result[3].item() == 3.0
+
+    def test_shift_forward_2(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.shift(x, 2)
+        assert math.isnan(result[0].item())
+        assert math.isnan(result[1].item())
+        assert result[2].item() == 1.0
+        assert result[3].item() == 2.0
+
+    def test_shift_backward(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.shift(x, -1)
+        assert result[0].item() == 2.0
+        assert result[1].item() == 3.0
+        assert result[2].item() == 4.0
+        assert math.isnan(result[3].item())
+
+    def test_shift_zero(self):
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.shift(x, 0)
+        assert result.tolist() == [1.0, 2.0, 3.0]
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.shift(x, 1)
+        assert result.numel() == 0
+
+
+class TestFillna:
+    """Tests for torch.ops.xpandas.fillna."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, float('nan'), 3.0, float('nan')], dtype=torch.double)
+        result = torch.ops.xpandas.fillna(x, 0.0)
+        assert result.tolist() == [1.0, 0.0, 3.0, 0.0]
+
+    def test_no_nans(self):
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.fillna(x, 0.0)
+        assert result.tolist() == [1.0, 2.0, 3.0]
+
+    def test_all_nans(self):
+        x = torch.tensor([float('nan'), float('nan')], dtype=torch.double)
+        result = torch.ops.xpandas.fillna(x, -1.0)
+        assert result.tolist() == [-1.0, -1.0]
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.fillna(x, 0.0)
+        assert result.numel() == 0
+
+
+class TestWhere:
+    """Tests for torch.ops.xpandas.where_."""
+
+    def test_basic(self):
+        cond = torch.tensor([True, False, True], dtype=torch.bool)
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        other = torch.tensor([10.0, 20.0, 30.0], dtype=torch.double)
+        result = torch.ops.xpandas.where_(cond, x, other)
+        assert result.tolist() == [1.0, 20.0, 3.0]
+
+    def test_all_true(self):
+        cond = torch.tensor([True, True], dtype=torch.bool)
+        x = torch.tensor([1.0, 2.0], dtype=torch.double)
+        other = torch.tensor([10.0, 20.0], dtype=torch.double)
+        result = torch.ops.xpandas.where_(cond, x, other)
+        assert result.tolist() == [1.0, 2.0]
+
+
+class TestMaskedFill:
+    """Tests for torch.ops.xpandas.masked_fill."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        mask = torch.tensor([False, True, False], dtype=torch.bool)
+        result = torch.ops.xpandas.masked_fill(x, mask, 0.0)
+        assert result.tolist() == [1.0, 0.0, 3.0]
+
+    def test_all_masked(self):
+        x = torch.tensor([1.0, 2.0], dtype=torch.double)
+        mask = torch.tensor([True, True], dtype=torch.bool)
+        result = torch.ops.xpandas.masked_fill(x, mask, -1.0)
+        assert result.tolist() == [-1.0, -1.0]
+
+
+class TestPctChange:
+    """Tests for torch.ops.xpandas.pct_change."""
+
+    def test_basic(self):
+        x = torch.tensor([100.0, 110.0, 99.0, 115.0], dtype=torch.double)
+        result = torch.ops.xpandas.pct_change(x, 1)
+        assert math.isnan(result[0].item())
+        assert abs(result[1].item() - 0.1) < 1e-10
+        assert abs(result[2].item() - (-0.1)) < 1e-10
+
+    def test_periods_2(self):
+        x = torch.tensor([100.0, 200.0, 150.0, 300.0], dtype=torch.double)
+        result = torch.ops.xpandas.pct_change(x, 2)
+        assert math.isnan(result[0].item())
+        assert math.isnan(result[1].item())
+        assert abs(result[2].item() - 0.5) < 1e-10   # (150-100)/100
+        assert abs(result[3].item() - 0.5) < 1e-10   # (300-200)/200
+
+    def test_zero_denominator(self):
+        x = torch.tensor([0.0, 1.0], dtype=torch.double)
+        result = torch.ops.xpandas.pct_change(x, 1)
+        assert math.isnan(result[1].item())  # division by zero
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.pct_change(x, 1)
+        assert result.numel() == 0
+
+
+class TestCumsum:
+    """Tests for torch.ops.xpandas.cumsum."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.cumsum(x)
+        assert result.tolist() == [1.0, 3.0, 6.0, 10.0]
+
+    def test_single(self):
+        x = torch.tensor([5.0], dtype=torch.double)
+        result = torch.ops.xpandas.cumsum(x)
+        assert result.tolist() == [5.0]
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.cumsum(x)
+        assert result.numel() == 0
+
+
+class TestCumprod:
+    """Tests for torch.ops.xpandas.cumprod."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.cumprod(x)
+        assert result.tolist() == [1.0, 2.0, 6.0, 24.0]
+
+    def test_with_negative(self):
+        x = torch.tensor([2.0, -1.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.cumprod(x)
+        assert result.tolist() == [2.0, -2.0, -6.0]
+
+
+class TestClip:
+    """Tests for torch.ops.xpandas.clip."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 5.0, 10.0, -3.0], dtype=torch.double)
+        result = torch.ops.xpandas.clip(x, 0.0, 8.0)
+        assert result.tolist() == [1.0, 5.0, 8.0, 0.0]
+
+    def test_all_in_range(self):
+        x = torch.tensor([2.0, 3.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.clip(x, 0.0, 10.0)
+        assert result.tolist() == [2.0, 3.0, 4.0]
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.clip(x, 0.0, 1.0)
+        assert result.numel() == 0

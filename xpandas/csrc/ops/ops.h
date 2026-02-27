@@ -44,4 +44,41 @@ at::Tensor rank(const at::Tensor& x);
 at::Tensor to_datetime(const at::Tensor& epochs, const std::string& unit);
 at::Tensor dt_floor(const at::Tensor& dt_ns, int64_t interval_ns);
 
+// groupby_agg.cpp
+std::tuple<at::Tensor, at::Tensor>
+groupby_sum(const at::Tensor& key, const at::Tensor& value);
+std::tuple<at::Tensor, at::Tensor>
+groupby_mean(const at::Tensor& key, const at::Tensor& value);
+std::tuple<at::Tensor, at::Tensor>
+groupby_count(const at::Tensor& key, const at::Tensor& value);
+std::tuple<at::Tensor, at::Tensor>
+groupby_std(const at::Tensor& key, const at::Tensor& value);
+
+// rolling.cpp
+at::Tensor rolling_sum(const at::Tensor& x, int64_t window);
+at::Tensor rolling_mean(const at::Tensor& x, int64_t window);
+at::Tensor rolling_std(const at::Tensor& x, int64_t window);
+
+// shift.cpp
+at::Tensor shift(const at::Tensor& x, int64_t periods);
+
+// fillna.cpp
+at::Tensor fillna(const at::Tensor& x, double fill_value);
+
+// where.cpp
+at::Tensor where_(const at::Tensor& cond, const at::Tensor& x,
+                  const at::Tensor& other);
+at::Tensor masked_fill(const at::Tensor& x, const at::Tensor& mask,
+                       double fill_value);
+
+// pct_change.cpp
+at::Tensor pct_change(const at::Tensor& x, int64_t periods);
+
+// cumulative.cpp
+at::Tensor cumsum(const at::Tensor& x);
+at::Tensor cumprod(const at::Tensor& x);
+
+// clip.cpp
+at::Tensor clip(const at::Tensor& x, double lower, double upper);
+
 } // namespace xpandas

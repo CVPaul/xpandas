@@ -81,4 +81,32 @@ at::Tensor cumprod(const at::Tensor& x);
 // clip.cpp
 at::Tensor clip(const at::Tensor& x, double lower, double upper);
 
+// groupby_minmax.cpp
+std::tuple<at::Tensor, at::Tensor>
+groupby_min(const at::Tensor& key, const at::Tensor& value);
+std::tuple<at::Tensor, at::Tensor>
+groupby_max(const at::Tensor& key, const at::Tensor& value);
+std::tuple<at::Tensor, at::Tensor>
+groupby_first(const at::Tensor& key, const at::Tensor& value);
+std::tuple<at::Tensor, at::Tensor>
+groupby_last(const at::Tensor& key, const at::Tensor& value);
+
+// math_ops.cpp
+at::Tensor abs_(const at::Tensor& x);
+at::Tensor log_(const at::Tensor& x);
+at::Tensor zscore(const at::Tensor& x);
+
+// ewm.cpp
+at::Tensor ewm_mean(const at::Tensor& x, int64_t span);
+
+// rolling_minmax.cpp
+at::Tensor rolling_min(const at::Tensor& x, int64_t window);
+at::Tensor rolling_max(const at::Tensor& x, int64_t window);
+
+// sort.cpp
+c10::Dict<std::string, at::Tensor>
+sort_by(const c10::Dict<std::string, at::Tensor>& table,
+        const std::string& by,
+        bool ascending);
+
 } // namespace xpandas

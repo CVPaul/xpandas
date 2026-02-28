@@ -11,6 +11,7 @@ import xpandas  # noqa: F401
 
 from examples.alpha_ts import Alpha
 from examples.alpha_vwap import AlphaVWAP
+from examples.alpha_momentum import AlphaMomentum
 
 
 # ============================================================
@@ -154,3 +155,78 @@ def test_vwap_multiple_instruments():
     sig = scripted(0, tick)
     expected = torch.tensor([-1.0, 1.0, 0.0], dtype=torch.double)
     assert torch.equal(sig, expected), f"Expected {expected}, got {sig}"
+
+
+# ============================================================
+# AlphaMomentum (cross-sectional momentum z-score) E2E tests
+# ============================================================
+
+def _make_momentum_data():
+    """10 instruments with varying prices."""
+    return {
+        "InstrumentID": torch.arange(10, dtype=torch.long),
+        "price": torch.tensor(
+            [100.0, 102.0, 98.0, 105.0, 97.0,
+             110.0, 95.0, 103.0, 101.0, 99.0],
+            dtype=torch.double),
+    }
+
+
+def test_momentum_script_and_run():
+    """Script AlphaMomentum, call on_bod + forward, verify signal properties."""
+    model = AlphaMomentum(ewm_span=5, vol_window=5)
+    scripted = torch.jit.script(model)
+
+    data = _make_momentum_data()
+    scripted.on_bod(0, data)
+
+    signal = scripted(0, data)
+    assert signal.shape == torch.Size([10])
+    # Signal should be bounded [-3, 3]
+    assert signal.min().item() >= -3.0
+    assert signal.max().item() <= 3.0
+    # Signal should contain no NaN
+    assert not torch.isnan(signal).any().item()
+
+
+def test_momentum_flat_on_empty():
+    """Forward before on_bod returns flat (zeros)."""
+    model = AlphaMomentum()
+    scripted = torch.jit.script(model)
+
+    data = {"price": torch.tensor([100.0, 200.0], dtype=torch.double)}
+    signal = scripted(0, data)
+    assert torch.equal(signal, torch.zeros(2, dtype=torch.double))
+
+
+def test_momentum_save_and_load(tmp_path):
+    """Script, save, reload, verify AlphaMomentum produces same output."""
+    model = AlphaMomentum(ewm_span=3, vol_window=3)
+    scripted = torch.jit.script(model)
+
+    data = _make_momentum_data()
+    scripted.on_bod(0, data)
+
+    path = str(tmp_path / "alpha_momentum_test.pt")
+    scripted.save(path)
+
+    loaded = torch.jit.load(path)
+    sig_orig = scripted(0, data)
+    sig_load = loaded(0, data)
+    assert torch.equal(sig_orig, sig_load), (
+        f"Mismatch after reload: {sig_orig} vs {sig_load}")
+
+
+def test_momentum_single_instrument():
+    """Single instrument should produce NaN → filled to 0."""
+    model = AlphaMomentum()
+    scripted = torch.jit.script(model)
+
+    data = {
+        "InstrumentID": torch.tensor([0], dtype=torch.long),
+        "price": torch.tensor([100.0], dtype=torch.double),
+    }
+    scripted.on_bod(0, data)
+    signal = scripted(0, data)
+    assert signal.shape == torch.Size([1])
+    assert signal.item() == 0.0  # zscore of single element → NaN → fillna → 0

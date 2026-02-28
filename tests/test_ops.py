@@ -579,3 +579,307 @@ class TestClip:
         x = torch.empty(0, dtype=torch.double)
         result = torch.ops.xpandas.clip(x, 0.0, 1.0)
         assert result.numel() == 0
+
+
+# ============================================================
+# New ops (groupby_min/max/first/last, math, ewm, rolling min/max, sort_by)
+# ============================================================
+
+class TestGroupbyMin:
+    """Tests for torch.ops.xpandas.groupby_min."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 1, 1], dtype=torch.long)
+        val = torch.tensor([3.0, 1.0, 4.0, 2.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_min(key, val)
+        assert k.tolist() == [0, 1]
+        assert v.tolist() == [1.0, 2.0]
+
+    def test_single_group(self):
+        key = torch.tensor([0, 0, 0], dtype=torch.long)
+        val = torch.tensor([5.0, 2.0, 8.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_min(key, val)
+        assert k.tolist() == [0]
+        assert v.tolist() == [2.0]
+
+    def test_empty(self):
+        key = torch.empty(0, dtype=torch.long)
+        val = torch.empty(0, dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_min(key, val)
+        assert k.numel() == 0
+
+
+class TestGroupbyMax:
+    """Tests for torch.ops.xpandas.groupby_max."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 1, 1], dtype=torch.long)
+        val = torch.tensor([3.0, 1.0, 4.0, 2.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_max(key, val)
+        assert k.tolist() == [0, 1]
+        assert v.tolist() == [3.0, 4.0]
+
+    def test_single_group(self):
+        key = torch.tensor([0, 0, 0], dtype=torch.long)
+        val = torch.tensor([5.0, 2.0, 8.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_max(key, val)
+        assert k.tolist() == [0]
+        assert v.tolist() == [8.0]
+
+    def test_empty(self):
+        key = torch.empty(0, dtype=torch.long)
+        val = torch.empty(0, dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_max(key, val)
+        assert k.numel() == 0
+
+
+class TestGroupbyFirst:
+    """Tests for torch.ops.xpandas.groupby_first."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 1, 1], dtype=torch.long)
+        val = torch.tensor([3.0, 1.0, 4.0, 2.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_first(key, val)
+        assert k.tolist() == [0, 1]
+        assert v.tolist() == [3.0, 4.0]
+
+    def test_three_groups(self):
+        key = torch.tensor([2, 0, 2, 1, 0], dtype=torch.long)
+        val = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_first(key, val)
+        # Keys are sorted: [0, 1, 2]
+        assert k.tolist() == [0, 1, 2]
+        assert v.tolist() == [20.0, 40.0, 10.0]
+
+    def test_empty(self):
+        key = torch.empty(0, dtype=torch.long)
+        val = torch.empty(0, dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_first(key, val)
+        assert k.numel() == 0
+
+
+class TestGroupbyLast:
+    """Tests for torch.ops.xpandas.groupby_last."""
+
+    def test_basic(self):
+        key = torch.tensor([0, 0, 1, 1], dtype=torch.long)
+        val = torch.tensor([3.0, 1.0, 4.0, 2.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_last(key, val)
+        assert k.tolist() == [0, 1]
+        assert v.tolist() == [1.0, 2.0]
+
+    def test_three_groups(self):
+        key = torch.tensor([2, 0, 2, 1, 0], dtype=torch.long)
+        val = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0], dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_last(key, val)
+        assert k.tolist() == [0, 1, 2]
+        assert v.tolist() == [50.0, 40.0, 30.0]
+
+    def test_empty(self):
+        key = torch.empty(0, dtype=torch.long)
+        val = torch.empty(0, dtype=torch.double)
+        k, v = torch.ops.xpandas.groupby_last(key, val)
+        assert k.numel() == 0
+
+
+class TestAbs:
+    """Tests for torch.ops.xpandas.abs_."""
+
+    def test_basic(self):
+        x = torch.tensor([-3.0, 0.0, 5.0, -1.5], dtype=torch.double)
+        result = torch.ops.xpandas.abs_(x)
+        assert result.tolist() == [3.0, 0.0, 5.0, 1.5]
+
+    def test_all_positive(self):
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.abs_(x)
+        assert result.tolist() == [1.0, 2.0, 3.0]
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.abs_(x)
+        assert result.numel() == 0
+
+
+class TestLog:
+    """Tests for torch.ops.xpandas.log_."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, math.e, math.e**2], dtype=torch.double)
+        result = torch.ops.xpandas.log_(x)
+        assert abs(result[0].item() - 0.0) < 1e-10
+        assert abs(result[1].item() - 1.0) < 1e-10
+        assert abs(result[2].item() - 2.0) < 1e-10
+
+    def test_zero_and_negative(self):
+        x = torch.tensor([0.0, -1.0, -100.0], dtype=torch.double)
+        result = torch.ops.xpandas.log_(x)
+        assert all(math.isnan(result[i].item()) for i in range(3))
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.log_(x)
+        assert result.numel() == 0
+
+
+class TestZscore:
+    """Tests for torch.ops.xpandas.zscore."""
+
+    def test_basic(self):
+        x = torch.tensor([2.0, 4.0, 6.0, 8.0, 10.0], dtype=torch.double)
+        result = torch.ops.xpandas.zscore(x)
+        # mean=6, std=sqrt(10) with ddof=1
+        assert abs(result[2].item()) < 1e-10  # mean element → 0
+        # first and last should be symmetric
+        assert abs(result[0].item() + result[4].item()) < 1e-10
+
+    def test_constant_values(self):
+        x = torch.tensor([5.0, 5.0, 5.0], dtype=torch.double)
+        result = torch.ops.xpandas.zscore(x)
+        assert all(result[i].item() == 0.0 for i in range(3))
+
+    def test_single_element(self):
+        x = torch.tensor([42.0], dtype=torch.double)
+        result = torch.ops.xpandas.zscore(x)
+        assert math.isnan(result[0].item())
+
+    def test_with_nan(self):
+        x = torch.tensor([1.0, float('nan'), 3.0, 5.0], dtype=torch.double)
+        result = torch.ops.xpandas.zscore(x)
+        assert math.isnan(result[1].item())
+        # Non-NaN values: mean=3, std=2 (ddof=1)
+        assert abs(result[0].item() - (-1.0)) < 1e-10
+        assert abs(result[2].item() - 0.0) < 1e-10
+        assert abs(result[3].item() - 1.0) < 1e-10
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.zscore(x)
+        assert result.numel() == 0
+
+
+class TestEwmMean:
+    """Tests for torch.ops.xpandas.ewm_mean."""
+
+    def test_basic(self):
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.ewm_mean(x, 3)
+        alpha = 2.0 / 4.0  # 0.5
+        # ewm[0] = 1.0
+        # ewm[1] = 0.5 * 2.0 + 0.5 * 1.0 = 1.5
+        # ewm[2] = 0.5 * 3.0 + 0.5 * 1.5 = 2.25
+        assert result[0].item() == 1.0
+        assert abs(result[1].item() - 1.5) < 1e-10
+        assert abs(result[2].item() - 2.25) < 1e-10
+
+    def test_span_1(self):
+        # alpha = 2/2 = 1.0 → just the current value
+        x = torch.tensor([1.0, 5.0, 3.0], dtype=torch.double)
+        result = torch.ops.xpandas.ewm_mean(x, 1)
+        assert result.tolist() == [1.0, 5.0, 3.0]
+
+    def test_single_element(self):
+        x = torch.tensor([42.0], dtype=torch.double)
+        result = torch.ops.xpandas.ewm_mean(x, 10)
+        assert result[0].item() == 42.0
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.ewm_mean(x, 5)
+        assert result.numel() == 0
+
+
+class TestRollingMin:
+    """Tests for torch.ops.xpandas.rolling_min."""
+
+    def test_basic(self):
+        x = torch.tensor([5.0, 3.0, 4.0, 1.0, 2.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_min(x, 3)
+        assert math.isnan(result[0].item())
+        assert math.isnan(result[1].item())
+        assert result[2].item() == 3.0  # min(5,3,4)
+        assert result[3].item() == 1.0  # min(3,4,1)
+        assert result[4].item() == 1.0  # min(4,1,2)
+
+    def test_window_1(self):
+        x = torch.tensor([3.0, 1.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_min(x, 1)
+        assert result.tolist() == [3.0, 1.0, 4.0]
+
+    def test_window_larger_than_input(self):
+        x = torch.tensor([1.0, 2.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_min(x, 5)
+        assert all(math.isnan(result[i].item()) for i in range(2))
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.rolling_min(x, 3)
+        assert result.numel() == 0
+
+
+class TestRollingMax:
+    """Tests for torch.ops.xpandas.rolling_max."""
+
+    def test_basic(self):
+        x = torch.tensor([5.0, 3.0, 4.0, 1.0, 6.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_max(x, 3)
+        assert math.isnan(result[0].item())
+        assert math.isnan(result[1].item())
+        assert result[2].item() == 5.0  # max(5,3,4)
+        assert result[3].item() == 4.0  # max(3,4,1)
+        assert result[4].item() == 6.0  # max(4,1,6)
+
+    def test_window_1(self):
+        x = torch.tensor([3.0, 1.0, 4.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_max(x, 1)
+        assert result.tolist() == [3.0, 1.0, 4.0]
+
+    def test_window_larger_than_input(self):
+        x = torch.tensor([1.0, 2.0], dtype=torch.double)
+        result = torch.ops.xpandas.rolling_max(x, 5)
+        assert all(math.isnan(result[i].item()) for i in range(2))
+
+    def test_empty(self):
+        x = torch.empty(0, dtype=torch.double)
+        result = torch.ops.xpandas.rolling_max(x, 3)
+        assert result.numel() == 0
+
+
+class TestSortBy:
+    """Tests for torch.ops.xpandas.sort_by."""
+
+    def test_ascending(self):
+        table = {
+            'price': torch.tensor([3.0, 1.0, 2.0], dtype=torch.double),
+            'vol': torch.tensor([10.0, 20.0, 30.0], dtype=torch.double),
+        }
+        result = torch.ops.xpandas.sort_by(table, 'price', True)
+        assert result['price'].tolist() == [1.0, 2.0, 3.0]
+        assert result['vol'].tolist() == [20.0, 30.0, 10.0]
+
+    def test_descending(self):
+        table = {
+            'price': torch.tensor([3.0, 1.0, 2.0], dtype=torch.double),
+            'vol': torch.tensor([10.0, 20.0, 30.0], dtype=torch.double),
+        }
+        result = torch.ops.xpandas.sort_by(table, 'price', False)
+        assert result['price'].tolist() == [3.0, 2.0, 1.0]
+        assert result['vol'].tolist() == [10.0, 30.0, 20.0]
+
+    def test_sort_by_int_column(self):
+        table = {
+            'id': torch.tensor([2, 0, 1], dtype=torch.long),
+            'val': torch.tensor([100.0, 200.0, 300.0], dtype=torch.double),
+        }
+        result = torch.ops.xpandas.sort_by(table, 'id', True)
+        assert result['id'].tolist() == [0, 1, 2]
+        assert result['val'].tolist() == [200.0, 300.0, 100.0]
+
+    def test_stable_sort(self):
+        """Equal elements should preserve their relative order (stable sort)."""
+        table = {
+            'price': torch.tensor([1.0, 1.0, 1.0], dtype=torch.double),
+            'order': torch.tensor([10.0, 20.0, 30.0], dtype=torch.double),
+        }
+        result = torch.ops.xpandas.sort_by(table, 'price', True)
+        assert result['order'].tolist() == [10.0, 20.0, 30.0]

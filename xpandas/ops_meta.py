@@ -170,3 +170,84 @@ def cumprod_fake(x: Tensor) -> Tensor:
 @torch.library.register_fake("xpandas::clip")
 def clip_fake(x: Tensor, lower: float, upper: float) -> Tensor:
     return torch.empty_like(x, dtype=torch.double)
+
+
+# --- groupby min/max/first/last ---
+
+@torch.library.register_fake("xpandas::groupby_min")
+def groupby_min_fake(key: Tensor, value: Tensor) -> Tuple[Tensor, Tensor]:
+    n = key.size(0)
+    return (
+        torch.empty(n, dtype=torch.long, device=key.device),
+        torch.empty(n, dtype=torch.double, device=key.device),
+    )
+
+
+@torch.library.register_fake("xpandas::groupby_max")
+def groupby_max_fake(key: Tensor, value: Tensor) -> Tuple[Tensor, Tensor]:
+    n = key.size(0)
+    return (
+        torch.empty(n, dtype=torch.long, device=key.device),
+        torch.empty(n, dtype=torch.double, device=key.device),
+    )
+
+
+@torch.library.register_fake("xpandas::groupby_first")
+def groupby_first_fake(key: Tensor, value: Tensor) -> Tuple[Tensor, Tensor]:
+    n = key.size(0)
+    return (
+        torch.empty(n, dtype=torch.long, device=key.device),
+        torch.empty(n, dtype=torch.double, device=key.device),
+    )
+
+
+@torch.library.register_fake("xpandas::groupby_last")
+def groupby_last_fake(key: Tensor, value: Tensor) -> Tuple[Tensor, Tensor]:
+    n = key.size(0)
+    return (
+        torch.empty(n, dtype=torch.long, device=key.device),
+        torch.empty(n, dtype=torch.double, device=key.device),
+    )
+
+
+# --- math ops ---
+
+@torch.library.register_fake("xpandas::abs_")
+def abs_fake(x: Tensor) -> Tensor:
+    return torch.empty_like(x, dtype=torch.double)
+
+
+@torch.library.register_fake("xpandas::log_")
+def log_fake(x: Tensor) -> Tensor:
+    return torch.empty_like(x, dtype=torch.double)
+
+
+@torch.library.register_fake("xpandas::zscore")
+def zscore_fake(x: Tensor) -> Tensor:
+    return torch.empty_like(x, dtype=torch.double)
+
+
+# --- exponential weighted moving average ---
+
+@torch.library.register_fake("xpandas::ewm_mean")
+def ewm_mean_fake(x: Tensor, span: int) -> Tensor:
+    return torch.empty_like(x, dtype=torch.double)
+
+
+# --- rolling min/max ---
+
+@torch.library.register_fake("xpandas::rolling_min")
+def rolling_min_fake(x: Tensor, window: int) -> Tensor:
+    return torch.empty_like(x, dtype=torch.double)
+
+
+@torch.library.register_fake("xpandas::rolling_max")
+def rolling_max_fake(x: Tensor, window: int) -> Tensor:
+    return torch.empty_like(x, dtype=torch.double)
+
+
+# --- sorting ---
+
+@torch.library.register_fake("xpandas::sort_by")
+def sort_by_fake(table: Dict[str, Tensor], by: str, ascending: bool) -> Dict[str, Tensor]:
+    return table

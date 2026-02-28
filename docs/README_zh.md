@@ -49,22 +49,31 @@ xpandas/
     rank.cpp               # 示例算子（参见 CONTRIBUTING_zh.md）
     to_datetime.cpp        # to_datetime + dt_floor
     groupby_agg.cpp        # groupby_sum/mean/count/std
+    groupby_minmax.cpp     # groupby_min/max/first/last
     rolling.cpp            # rolling_sum/mean/std
+    rolling_minmax.cpp     # rolling_min/max（O(n) 单调队列）
     shift.cpp              # shift（前移/后移）
     fillna.cpp             # fillna
     where.cpp              # where_, masked_fill
     pct_change.cpp         # pct_change
     cumulative.cpp         # cumsum, cumprod
     clip.cpp               # clip
+    math_ops.cpp           # abs_, log_, zscore
+    ewm.cpp                # ewm_mean
+    sort.cpp               # sort_by
 inference/
   main.cpp                 # 纯 C++ 推理驱动程序
 examples/
   alpha_original.py        # 基于原始 pandas 的 Alpha（参考实现）
-  alpha_ts.py              # TorchScript 兼容的 Alpha
+  alpha_ts.py              # TorchScript 兼容的 Alpha（突破策略）
+  alpha_vwap.py            # TorchScript VWAP 均值回归 Alpha
+  alpha_momentum.py        # TorchScript 动量 z-score Alpha
   trace_and_save.py        # 编译 + 测试 + 保存 alpha.pt
+benchmarks/
+  bench_ops.py             # xpandas vs pandas 性能对比
 tests/
-  test_ops.py              # 各算子单元测试
-  test_alpha_e2e.py        # 端到端编译测试
+  test_ops.py              # 各算子单元测试（110 个）
+  test_alpha_e2e.py        # 端到端编译测试（10 个）
 docs/
   README_zh.md             # 中文文档（本文件）
   CONTRIBUTING_zh.md       # 中文贡献指南
@@ -110,13 +119,14 @@ make -j
 # 输出: Signal: [+1.0, -1.0]
 ```
 
-## 可用算子（共 24 个）
+## 可用算子（共 35 个）
 
 ### DataFrame 工具
 
 | 算子 | Schema | 对应 pandas 操作 |
 |------|--------|-----------------|
 | `lookup` | `(Dict(str, Tensor) table, str key) -> Tensor` | `df['col']` |
+| `sort_by` | `(Dict(str, Tensor) table, str by, bool ascending) -> Dict(str, Tensor)` | `df.sort_values(by)` |
 
 ### 分组 / 聚合
 
@@ -127,6 +137,10 @@ make -j
 | `groupby_mean` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].mean()` |
 | `groupby_count` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].count()` |
 | `groupby_std` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].std()` |
+| `groupby_min` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].min()` |
+| `groupby_max` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].max()` |
+| `groupby_first` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].first()` |
+| `groupby_last` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].last()` |
 
 ### 逐元素比较
 
@@ -152,6 +166,7 @@ make -j
 | 算子 | Schema | 对应 pandas 操作 |
 |------|--------|-----------------|
 | `rank` | `(Tensor x) -> Tensor` | `series.rank(method='average')` |
+| `zscore` | `(Tensor x) -> Tensor` | `(series - series.mean()) / series.std()` |
 
 ### 日期时间
 
@@ -167,6 +182,8 @@ make -j
 | `rolling_sum` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).sum()` |
 | `rolling_mean` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).mean()` |
 | `rolling_std` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).std()` |
+| `rolling_min` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).min()` |
+| `rolling_max` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).max()` |
 
 ### 移位 / 滞后
 
@@ -205,6 +222,43 @@ make -j
 | 算子 | Schema | 对应 pandas 操作 |
 |------|--------|-----------------|
 | `clip` | `(Tensor x, float lower, float upper) -> Tensor` | `series.clip(lower, upper)` |
+
+### 数学
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `abs_` | `(Tensor x) -> Tensor` | `series.abs()` |
+| `log_` | `(Tensor x) -> Tensor` | `np.log(series)` |
+
+### 指数加权
+
+| 算子 | Schema | 对应 pandas 操作 |
+|------|--------|-----------------|
+| `ewm_mean` | `(Tensor x, int span) -> Tensor` | `series.ewm(span=span, adjust=False).mean()` |
+
+## 性能基准
+
+运行 `python benchmarks/bench_ops.py` 对比 xpandas 算子与 pandas 等价操作的性能。
+示例输出（N=10,000，20 次重复，取中位数）：
+
+```
+Op                         pandas (us)  xpandas (us)   speedup
+--------------------------------------------------------------
+clip                             481.2           5.6    85.91x >>>
+to_datetime                     2706.3          16.6   163.02x >>>
+rolling_sum                      142.1           9.1    15.66x >>>
+breakout_signal                  187.5          10.3    18.26x >>>
+pct_change                       207.7          17.3    11.99x >>>
+...
+--------------------------------------------------------------
+几何平均加速比:                                           2.23x
+34 个算子中 23 个更快
+```
+
+主要优势：逐元素运算（`clip`、`compare_*`、`fillna`）、滚动窗口运算
+（`rolling_sum/mean/std`）、融合运算（`breakout_signal`）及日期时间转换
+（`to_datetime` — 163 倍）。分组运算较慢，因为 xpandas 使用有序
+`std::map` 键（保证 TorchScript 输出确定性），而 pandas 使用优化的 Cython 哈希表。
 
 ## 技术细节
 

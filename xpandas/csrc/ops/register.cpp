@@ -71,6 +71,30 @@ TORCH_LIBRARY(xpandas, m) {
 
     // --- clipping ---
     m.def("clip(Tensor x, float lower, float upper) -> Tensor");
+
+    // --- groupby min/max/first/last ---
+    m.def("groupby_min(Tensor key, Tensor value) -> (Tensor, Tensor)");
+    m.def("groupby_max(Tensor key, Tensor value) -> (Tensor, Tensor)");
+    m.def("groupby_first(Tensor key, Tensor value) -> (Tensor, Tensor)");
+    m.def("groupby_last(Tensor key, Tensor value) -> (Tensor, Tensor)");
+
+    // --- math ---
+    m.def("abs_(Tensor x) -> Tensor");
+    m.def("log_(Tensor x) -> Tensor");
+    m.def("zscore(Tensor x) -> Tensor");
+
+    // --- exponential weighted moving average ---
+    m.def("ewm_mean(Tensor x, int span) -> Tensor");
+
+    // --- rolling min/max ---
+    m.def("rolling_min(Tensor x, int window) -> Tensor");
+    m.def("rolling_max(Tensor x, int window) -> Tensor");
+
+    // --- sorting ---
+    // NOTE: sort_by has no Tensor positional args (first arg is Dict), so it
+    // must be registered as catch-all (CompositeImplicitAutograd).
+    m.def("sort_by(Dict(str, Tensor) table, str by, bool ascending) -> Dict(str, Tensor)",
+          &xpandas::sort_by);
 }
 
 TORCH_LIBRARY_IMPL(xpandas, CPU, m) {
@@ -98,4 +122,15 @@ TORCH_LIBRARY_IMPL(xpandas, CPU, m) {
     m.impl("cumsum",                &xpandas::cumsum);
     m.impl("cumprod",               &xpandas::cumprod);
     m.impl("clip",                  &xpandas::clip);
+    m.impl("groupby_min",           &xpandas::groupby_min);
+    m.impl("groupby_max",           &xpandas::groupby_max);
+    m.impl("groupby_first",         &xpandas::groupby_first);
+    m.impl("groupby_last",          &xpandas::groupby_last);
+    m.impl("abs_",                   &xpandas::abs_);
+    m.impl("log_",                   &xpandas::log_);
+    m.impl("zscore",                 &xpandas::zscore);
+    m.impl("ewm_mean",              &xpandas::ewm_mean);
+    m.impl("rolling_min",           &xpandas::rolling_min);
+    m.impl("rolling_max",           &xpandas::rolling_max);
+    // sort_by is registered as catch-all in TORCH_LIBRARY above
 }

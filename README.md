@@ -51,22 +51,31 @@ xpandas/
     rank.cpp               # Example op (see CONTRIBUTING.md)
     to_datetime.cpp        # to_datetime + dt_floor
     groupby_agg.cpp        # groupby_sum/mean/count/std
+    groupby_minmax.cpp     # groupby_min/max/first/last
     rolling.cpp            # rolling_sum/mean/std
+    rolling_minmax.cpp     # rolling_min/max (O(n) monotonic deque)
     shift.cpp              # shift (lag/lead)
     fillna.cpp             # fillna
     where.cpp              # where_, masked_fill
     pct_change.cpp         # pct_change
     cumulative.cpp         # cumsum, cumprod
     clip.cpp               # clip
+    math_ops.cpp           # abs_, log_, zscore
+    ewm.cpp                # ewm_mean
+    sort.cpp               # sort_by
 inference/
   main.cpp                 # Pure C++ inference driver
 examples/
   alpha_original.py        # Original pandas-based Alpha (reference)
-  alpha_ts.py              # TorchScript-compatible Alpha
+  alpha_ts.py              # TorchScript-compatible Alpha (breakout)
+  alpha_vwap.py            # TorchScript VWAP mean-reversion Alpha
+  alpha_momentum.py        # TorchScript momentum z-score Alpha
   trace_and_save.py        # Script + test + save alpha.pt
+benchmarks/
+  bench_ops.py             # xpandas vs pandas performance comparison
 tests/
-  test_ops.py              # Unit tests for each op
-  test_alpha_e2e.py        # End-to-end scripting test
+  test_ops.py              # Unit tests for each op (110 tests)
+  test_alpha_e2e.py        # End-to-end scripting tests (10 tests)
 ```
 
 ## Quickstart
@@ -110,13 +119,14 @@ make -j
 # Output: Signal: [+1.0, -1.0]
 ```
 
-## Available Ops (24 total)
+## Available Ops (35 total)
 
 ### DataFrame Utilities
 
 | Op | Schema | Pandas Equivalent |
 |----|--------|-------------------|
 | `lookup` | `(Dict(str, Tensor) table, str key) -> Tensor` | `df['col']` |
+| `sort_by` | `(Dict(str, Tensor) table, str by, bool ascending) -> Dict(str, Tensor)` | `df.sort_values(by)` |
 
 ### Groupby / Aggregation
 
@@ -127,6 +137,10 @@ make -j
 | `groupby_mean` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].mean()` |
 | `groupby_count` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].count()` |
 | `groupby_std` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].std()` |
+| `groupby_min` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].min()` |
+| `groupby_max` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].max()` |
+| `groupby_first` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].first()` |
+| `groupby_last` | `(Tensor key, Tensor value) -> (Tensor, Tensor)` | `df.groupby(key)[val].last()` |
 
 ### Element-wise Comparison
 
@@ -152,6 +166,7 @@ make -j
 | Op | Schema | Pandas Equivalent |
 |----|--------|-------------------|
 | `rank` | `(Tensor x) -> Tensor` | `series.rank(method='average')` |
+| `zscore` | `(Tensor x) -> Tensor` | `(series - series.mean()) / series.std()` |
 
 ### Datetime
 
@@ -167,6 +182,8 @@ make -j
 | `rolling_sum` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).sum()` |
 | `rolling_mean` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).mean()` |
 | `rolling_std` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).std()` |
+| `rolling_min` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).min()` |
+| `rolling_max` | `(Tensor x, int window) -> Tensor` | `series.rolling(window).max()` |
 
 ### Shift / Lag
 
@@ -205,6 +222,44 @@ make -j
 | Op | Schema | Pandas Equivalent |
 |----|--------|-------------------|
 | `clip` | `(Tensor x, float lower, float upper) -> Tensor` | `series.clip(lower, upper)` |
+
+### Math
+
+| Op | Schema | Pandas Equivalent |
+|----|--------|-------------------|
+| `abs_` | `(Tensor x) -> Tensor` | `series.abs()` |
+| `log_` | `(Tensor x) -> Tensor` | `np.log(series)` |
+
+### Exponential Weighted
+
+| Op | Schema | Pandas Equivalent |
+|----|--------|-------------------|
+| `ewm_mean` | `(Tensor x, int span) -> Tensor` | `series.ewm(span=span, adjust=False).mean()` |
+
+## Benchmarks
+
+Run `python benchmarks/bench_ops.py` to compare xpandas ops against their pandas
+equivalents. Example output (N=10,000, 20 repeats, median time):
+
+```
+Op                         pandas (us)  xpandas (us)   speedup
+--------------------------------------------------------------
+clip                             481.2           5.6    85.91x >>>
+to_datetime                     2706.3          16.6   163.02x >>>
+rolling_sum                      142.1           9.1    15.66x >>>
+breakout_signal                  187.5          10.3    18.26x >>>
+pct_change                       207.7          17.3    11.99x >>>
+...
+--------------------------------------------------------------
+Geometric mean speedup:                                  2.23x
+Faster in 23/34 ops
+```
+
+Key wins: element-wise ops (`clip`, `compare_*`, `fillna`), rolling window ops
+(`rolling_sum/mean/std`), fused ops (`breakout_signal`), and datetime conversion
+(`to_datetime` — 163x). Groupby ops are slower because xpandas uses sorted
+`std::map` keys (for deterministic TorchScript output) vs pandas' optimized
+Cython hashmaps.
 
 ## Contributing
 

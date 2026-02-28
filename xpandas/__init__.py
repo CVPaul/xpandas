@@ -19,17 +19,13 @@ _so_files = list(Path(__file__).parent.glob("_C*"))
 if _so_files:
     torch.ops.load_library(str(_so_files[0]))
 
+from .wrappers import DataFrame, Series, Index, GroupBy
+
 
 # --------------------------------------------------------------------------
 # Public API -- thin wrappers that TorchScript can understand
 # --------------------------------------------------------------------------
 
-def DataFrame(d: dict):
-    """Construct a "DataFrame" from a dict of column-name -> Tensor.
-
-    Returns Dict[str, Tensor] directly -- TorchScript-friendly.
-    """
-    return d
 
 
 def concat(frames):
@@ -96,4 +92,4 @@ def dt_floor(dt_ns, freq: str):
     return torch.ops.xpandas.dt_floor(dt_ns, interval_ns)
 
 
-__all__ = ["DataFrame", "concat", "to_datetime", "dt_floor"]
+__all__ = ["DataFrame", "Series", "Index", "GroupBy", "concat", "to_datetime", "dt_floor"]

@@ -19,7 +19,7 @@ _so_files = list(Path(__file__).parent.glob("_C*"))
 if _so_files:
     torch.ops.load_library(str(_so_files[0]))
 
-from .wrappers import DataFrame, Series, Index, GroupBy
+from .wrappers import DataFrame, Series, Index, GroupBy, Rolling, EWM, Expanding
 
 
 # --------------------------------------------------------------------------
@@ -28,12 +28,32 @@ from .wrappers import DataFrame, Series, Index, GroupBy
 
 
 
-def concat(frames):
-    """Placeholder concat -- for the OHLC case we construct the frame
-    directly inside on_bod, so this is identity."""
+def concat(frames, axis=0):
+    """Concatenate DataFrames along axis.
+    
+    axis=0: vertical stack (same columns)
+    axis=1: horizontal merge (different columns)
+    """
     if isinstance(frames, list) and len(frames) == 1:
         return frames[0]
-    raise NotImplementedError("concat of >1 frames not yet supported")
+    if not frames:
+        from .wrappers import DataFrame
+        return DataFrame({})
+    if axis == 1:
+        # Horizontal: merge all columns
+        result = {}
+        for f in frames:
+            result.update(f._data)
+        from .wrappers import DataFrame
+        return DataFrame(result)
+    else:
+        # Vertical: stack same columns
+        cols = list(frames[0]._data.keys())
+        result = {}
+        for c in cols:
+            result[c] = torch.cat([f._data[c] for f in frames])
+        from .wrappers import DataFrame
+        return DataFrame(result)
 
 
 # --------------------------------------------------------------------------
@@ -92,4 +112,4 @@ def dt_floor(dt_ns, freq: str):
     return torch.ops.xpandas.dt_floor(dt_ns, interval_ns)
 
 
-__all__ = ["DataFrame", "Series", "Index", "GroupBy", "concat", "to_datetime", "dt_floor"]
+__all__ = ["DataFrame", "Series", "Index", "GroupBy", "Rolling", "EWM", "Expanding", "concat", "to_datetime", "dt_floor"]

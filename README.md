@@ -261,6 +261,37 @@ Key wins: element-wise ops (`clip`, `compare_*`, `fillna`), rolling window ops
 `std::map` keys (for deterministic TorchScript output) vs pandas' optimized
 Cython hashmaps.
 
+### Wrapper Benchmarks
+
+Run `python benchmarks/bench_wrappers.py` to measure Python wrapper overhead and
+end-to-end Alpha performance. Example output (N=10,000, 30 repeats, median time):
+
+**Part 1: Wrapper Overhead**
+
+| Operation | Direct (μs) | Wrapper (μs) | Overhead |
+|-----------|-------------|--------------|---------|
+| Series.__gt__ | 9.4 | 9.7 | +4% |
+| Series.__lt__ | 9.4 | 9.9 | +5% |
+| Series.__sub__ | 3.7 | 3.9 | +7% |
+| Series.astype(float) | 9.9 | 10.2 | +3% |
+| DataFrame.__getattr__ | 0.1 | 0.7 | +596% |
+| GroupBy→OHLC chain | 127.5 | 517.9 | +306% |
+| OHLC×4 cached | 509.7 | 131.1 | -74% 🏆 |
+
+**Part 2: End-to-End Alpha (pandas vs xpandas)**
+
+| Size | Instruments | Pandas (μs) | xpandas (μs) | Speedup |
+|------|-------------|-------------|--------------|---------|
+| Small (10×50) | 10 | 911 | 69 | 13.2× |
+| Medium (50×100) | 50 | 1013 | 302 | 3.4× |
+| Large (200×500) | 200 | 2787 | 5870 | 0.47× |
+| Geomean | — | — | — | 2.76× |
+
+Wrapper overhead on element-wise ops is negligible (<10%). The `GroupBy→OHLC`
+chain shows high overhead from Python dispatch, but per-column OHLC caching
+(computing all 4 aggregations in one C++ call) reduces total time by 74%.
+At medium scale (50 instruments × 100 ticks), xpandas is 3.4× faster than pandas.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) ([中文](docs/CONTRIBUTING_zh.md)) for a

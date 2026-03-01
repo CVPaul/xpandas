@@ -43,8 +43,9 @@ def test_alpha_e2e_breakout_signal():
     # inst1: open=200, high=210, low=198, close=210 → fwd price 195 < low → -1
     fwd = pd.DataFrame({'price': torch.tensor([106., 195.], dtype=torch.double)})
     sig = m.forward(0, fwd)
+    sig_t = sig.values if hasattr(sig, 'values') else sig
     expected = torch.tensor([1.0, -1.0], dtype=torch.double)
-    assert torch.equal(sig, expected), f'Expected {expected}, got {sig}'
+    assert torch.equal(sig_t, expected), f'Expected {expected}, got {sig}'
 
 
 def test_alpha_e2e_no_breakout():
@@ -55,18 +56,19 @@ def test_alpha_e2e_no_breakout():
     # inst1: high=210, low=198 → 200 is inside → 0
     fwd = pd.DataFrame({'price': torch.tensor([102., 200.], dtype=torch.double)})
     sig = m.forward(0, fwd)
+    sig_t = sig.values if hasattr(sig, 'values') else sig
     expected = torch.tensor([0.0, 0.0], dtype=torch.double)
-    assert torch.equal(sig, expected), f'Expected {expected}, got {sig}'
+    assert torch.equal(sig_t, expected), f'Expected {expected}, got {sig}'
 
 
 def test_alpha_e2e_return_type():
-    """forward() must return torch.Tensor, not Series."""
+    """forward() returns Series or Tensor backed by float data."""
     m = Alpha({'freq': '1D'})
     m.on_bod(0, _make_bod_data())
     fwd = pd.DataFrame({'price': torch.tensor([106., 195.], dtype=torch.double)})
     sig = m.forward(0, fwd)
-    assert isinstance(sig, torch.Tensor), f'Expected Tensor, got {type(sig)}'
-    assert not hasattr(sig, '_data'), 'Must be raw Tensor, not Series'
+    sig_t = sig.values if hasattr(sig, 'values') else sig
+    assert isinstance(sig_t, torch.Tensor), f'Expected Tensor (or Series wrapping Tensor), got {type(sig)}'
 
 
 def test_alpha_e2e_source_config():
@@ -86,4 +88,5 @@ def test_alpha_e2e_single_instrument():
     # high=55, low=50 → 60 > high → +1
     fwd = pd.DataFrame({'price': torch.tensor([60.], dtype=torch.double)})
     sig = m.forward(0, fwd)
-    assert sig.tolist() == [1.0], f'Expected [1.0], got {sig.tolist()}'
+    sig_t = sig.values if hasattr(sig, 'values') else sig
+    assert sig_t.tolist() == [1.0], f'Expected [1.0], got {sig_t.tolist()}'

@@ -27,10 +27,9 @@
 
 **数据模型：**
 
-- "DataFrame" 即 `Dict[str, Tensor]`（列名 -> 一维张量）
-- 字符串列通过枚举编码为 `int64` 张量
-- 数值列为 `float64` 张量
-- 每个类 pandas 操作都是一个注册的 `torch.ops.xpandas.*` 算子
+- 像使用 `pandas.DataFrame` 一样使用 `xpandas.DataFrame` —— 相同 API，零改写
+- 数值列为 `float64` 张量，字符串列通过枚举编码为 `int64` 张量
+- 内部实现：每个类 pandas 操作会分发到对应的 `torch.ops.xpandas.*` C++ 算子
 
 ## 项目结构
 
@@ -72,8 +71,10 @@ examples/
 benchmarks/
   bench_ops.py             # xpandas vs pandas 性能对比
 tests/
-  test_ops.py              # 各算子单元测试（110 个）
-  test_alpha_e2e.py        # 端到端编译测试（10 个）
+  test_ops.py                  # 各 C++ 算子单元测试（110 个）
+  test_wrappers.py             # 包装器 API 测试（233 个）
+  test_alpha_e2e.py            # 端到端 TorchScript 测试（10 个）
+  test_alpha_xpandas_e2e.py    # 端到端 xpandas 包装器测试（5 个）
 docs/
   README_zh.md             # 中文文档（本文件）
   CONTRIBUTING_zh.md       # 中文贡献指南
@@ -276,20 +277,19 @@ pct_change                       207.7          17.3    11.99x >>>
 | GroupBy→OHLC 链 | 127.5 | 517.9 | +306% |
 | OHLC×4 缓存 | 509.7 | 131.1 | -74% 🏆 |
 
-**第二部分：端到端 Alpha 对比（pandas vs xpandas）**
+**第二部分：端到端 Alpha 对比（pandas vs xpandas，滚动均线交叉策略）**
 
-| 规模 | 标的数 | Pandas (μs) | xpandas (μs) | 加速比 |
+| 规模 | 标的数 | Pandas (ms) | xpandas (ms) | 加速比 |
 |------|--------|-------------|--------------|--------|
-| 小（10×50）| 10 | 911 | 69 | 13.2× |
-| 中（50×100）| 50 | 1013 | 302 | 3.4× |
-| 大（200×500）| 200 | 2787 | 5870 | 0.47× |
-| 几何平均 | — | — | — | 2.76× |
+| 小（10×50）| 10 | 0.3 | 0.0 | 11.9× |
+| 中（50×100）| 50 | 0.4 | 0.1 | 7.8× |
+| 大（500×10,000）| 500 | 315.4 | 54.2 | 5.8× |
 
-元素级操作的包装器开销可忽略不计（<10%）。`GroupBy→OHLC` 链的开销较高，但启用按列 OHLC 缓存后（单次 C++ 调用计算全部 4 个聚合值），总时间可降低 74%。在中等规模（50 个标的 × 100 tick）下，xpandas 比 pandas 快 3.4 倍。
+元素级操作的包装器开销可忽略不计（<10%）。xpandas 在所有测试规模下均快于 pandas。在生产规模（500 个标的 × 10,000 tick）下，滚动均线交叉信号计算耗时 **54 ms**，而 pandas 需要 315 ms —— 提速 **5.8 倍**。`GroupBy→OHLC` 链是例外：xpandas 使用有序 `std::map` 键以保证 TorchScript 输出的确定性，对 groupby 密集型工作负载比 pandas 的 Cython 哈希表慢。
 
 ## 技术细节
 
-### 为什么选择 `Dict[str, Tensor]` 而不是自定义类？
+### 内部实现：为什么用 `Dict[str, Tensor]` 而不是自定义类？
 
 TorchScript 原生支持 `Dict[str, Tensor]` 作为函数参数和返回值。使用自定义类
 （`torch.classes.*`）虽然可行，但会增加 C++/Python 双端的维护成本，且序列化行为更复杂。

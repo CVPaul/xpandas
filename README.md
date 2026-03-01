@@ -29,10 +29,9 @@ rewrite. xpandas bridges this gap:
 
 **Data model:**
 
-- A "DataFrame" is `Dict[str, Tensor]` (column name -> 1-D tensor)
-- String columns are enum-encoded to `int64` tensors
-- Numeric columns are `float64` tensors
-- Each pandas-like operation is a registered `torch.ops.xpandas.*` op
+- Use `xpandas.DataFrame` exactly like `pandas.DataFrame` — same API, zero rewrite
+- Columns are 1-D `float64` tensors (numeric) or `int64` tensors (enum-encoded strings)
+- Internally, each pandas-like operation dispatches to a registered `torch.ops.xpandas.*` C++ op
 
 ## Project Structure
 
@@ -74,8 +73,10 @@ examples/
 benchmarks/
   bench_ops.py             # xpandas vs pandas performance comparison
 tests/
-  test_ops.py              # Unit tests for each op (110 tests)
-  test_alpha_e2e.py        # End-to-end scripting tests (10 tests)
+  test_ops.py                  # Unit tests for each C++ op (110 tests)
+  test_wrappers.py             # Wrapper API tests (233 tests)
+  test_alpha_e2e.py            # End-to-end TorchScript tests (10 tests)
+  test_alpha_xpandas_e2e.py    # End-to-end xpandas wrapper tests (5 tests)
 ```
 
 ## Quickstart
@@ -278,19 +279,20 @@ end-to-end Alpha performance. Example output (N=10,000, 30 repeats, median time)
 | GroupBy→OHLC chain | 127.5 | 517.9 | +306% |
 | OHLC×4 cached | 509.7 | 131.1 | -74% 🏆 |
 
-**Part 2: End-to-End Alpha (pandas vs xpandas)**
+**Part 2: End-to-End Alpha (pandas vs xpandas, rolling mean crossover)**
 
-| Size | Instruments | Pandas (μs) | xpandas (μs) | Speedup |
+| Size | Instruments | Pandas (ms) | xpandas (ms) | Speedup |
 |------|-------------|-------------|--------------|---------|
-| Small (10×50) | 10 | 911 | 69 | 13.2× |
-| Medium (50×100) | 50 | 1013 | 302 | 3.4× |
-| Large (200×500) | 200 | 2787 | 5870 | 0.47× |
-| Geomean | — | — | — | 2.76× |
+| Small (10×50) | 10 | 0.3 | 0.0 | 11.9× |
+| Medium (50×100) | 50 | 0.4 | 0.1 | 7.8× |
+| Large (500×10,000) | 500 | 315.4 | 54.2 | 5.8× |
 
-Wrapper overhead on element-wise ops is negligible (<10%). The `GroupBy→OHLC`
-chain shows high overhead from Python dispatch, but per-column OHLC caching
-(computing all 4 aggregations in one C++ call) reduces total time by 74%.
-At medium scale (50 instruments × 100 ticks), xpandas is 3.4× faster than pandas.
+Wrapper overhead on element-wise ops is negligible (<10%). xpandas is consistently
+faster than pandas at all tested scales. At production scale (500 instruments ×
+10,000 ticks), xpandas completes a rolling mean crossover signal in **54 ms**
+vs pandas' 315 ms — a **5.8× speedup**. The `GroupBy→OHLC` chain is an exception:
+xpandas uses sorted `std::map` keys for deterministic TorchScript output, which is
+slower than pandas' Cython hashmaps for groupby-heavy workloads.
 
 ## Contributing
 

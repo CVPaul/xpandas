@@ -2,8 +2,41 @@
 
 [English](../README.md) | **中文**
 
-将类 pandas 的 DataFrame 操作实现为 **PyTorch 自定义算子**（`TORCH_LIBRARY`），
-支持 `torch.jit.script` 编译，并可在纯 C++ 环境中通过 `torch::jit::load()` 直接推理。
+**唯一一个支持 TorchScript 编译并可在纯 C++ 推理中执行的 pandas 兼容 DataFrame 库 —— 无需 Python 运行时。**
+
+用熟悉的 `pd.DataFrame` / `pd.Series` 语法编写交易策略，通过 `torch.jit.script` 编译，将 `.pt` 产物部署到 C++ 引擎，以原生速度运行。
+
+## 核心特性
+
+- 🔁 **无缝替换** —— `import xpandas as pd` 替换 `import pandas as pd`，零代码改写
+- ⚡ **TorchScript 原生** —— 每个算子都是注册的 `TORCH_LIBRARY` C++ 算子，完全兼容 `torch.jit.script`
+- 🚀 **纯 C++ 推理** —— `torch::jit::load("alpha.pt")` + `dlopen(libxpandas_ops.so)`，运行时无需 Python
+- 📊 **35 个算子** 覆盖 groupby、rolling、ewm、shift、fillna、rank、zscore、cumulative、datetime 等
+- 🏎️ **比 pandas 快 2–163 倍** 的逐元素和滚动窗口运算（详见[性能基准](#性能基准)）
+
+## 目标使用场景
+
+| 场景 | 为什么选 xpandas？ |
+|------|-----------------|
+| **高频 / 量化交易** | 在 Python pandas 中原型开发 Alpha 信号，零改写部署到亚毫秒级 C++ 引擎 |
+| **在线模型服务** | 将特征工程（rolling stats、z-score、pct_change）嵌入 TorchScript 模型，在 C++ 中通过 `torch::jit` 服务 |
+| **低延迟推理流水线** | 消除 Python GIL 和解释器开销 —— 整条信号路径运行在编译后的 C++ 中 |
+| **边缘 / 嵌入式部署** | 仅需一个 `.pt` 文件 + 共享库 —— 目标机器无需安装 Python |
+
+## xpandas 与其他方案的区别
+
+| | **xpandas** | **pandas** | **Polars** | **Modin** | **cuDF (RAPIDS)** |
+|---|---|---|---|---|---|
+| **核心目标** | TorchScript 编译 + C++ 推理 | 通用数据分析 | 高性能 DataFrame 引擎 | 用并行化扩展 pandas | GPU 加速 DataFrame |
+| **`torch.jit.script` 支持** | ✅ 一等公民 —— 每个算子都是 `TORCH_LIBRARY` 自定义算子 | ❌ | ❌ | ❌ | ❌ |
+| **纯 C++ 推理** | ✅ `torch::jit::load()` —— 运行时无需 Python | ❌ 需要 Python | ❌ 需要 Rust 运行时 | ❌ 需要 Python | ❌ 需要 Python + CUDA |
+| **部署产物** | 单个 `.pt` 文件 + `.so` | Python 源码 + 环境 | Python/Rust 源码 + 环境 | Python 源码 + 环境 | Python 源码 + 环境 |
+| **无 Python GIL** | ✅ 所有算子在 C++ 中执行 | ❌ | ✅ (Rust) | 部分 (Ray) | ✅ (GPU) |
+| **API 兼容性** | pandas 子集（35 个算子） | 完整 pandas API | 自有 API（类 SQL） | 完整 pandas API | pandas 子集 |
+| **最适合** | 量化信号 → C++ 生产 | 探索性分析 | 大规模数据处理 | 扩展现有 pandas 代码 | GPU 批量处理 |
+
+> **一句话总结：** 其他库优化的是*在 Python 中处理数据有多快*。  
+> xpandas 解决的是一个根本不同的问题：**将你的 pandas 逻辑完全移出 Python**，编译成可部署的、无 GIL 的 C++ 产物。
 
 ## 为什么需要 xpandas？
 
@@ -312,6 +345,184 @@ m.def("lookup(Dict(str, Tensor) table, str key) -> Tensor",
 `ops_meta.py` 中的 FakeTensor 核函数告诉 `torch.compile` / `torch.export` 每个算子
 输出的 shape 和 dtype，而无需实际执行计算。这对 `torch.jit.script` 并非必需，但为
 `torch.compile` 兼容性提供了支持。
+
+## API 参考（Python 包装器）
+
+Python 包装器 API（`import xpandas as pd`）提供了 pandas 兼容的类，底层调度到 C++ 算子。
+
+### 核心类
+
+| 类 | 描述 | 关键方法 |
+|---|------|---------|
+| `pd.DataFrame` | 基于 Dict 的 DataFrame（`Dict[str, Tensor]`） | `__getitem__`、`__setitem__`、`columns`、`shape`、`dtypes`、`head()`、`tail()`、`drop()`、`rename()`、`sort_values()`、`merge()`、`describe()`、`apply()`、`groupby()` |
+| `pd.Series` | 1-D Tensor 包装器 | 算术（`+`,`-`,`*`,`/`,`**`,`%`）、比较（`>`,`<`,`>=`,`<=`,`==`,`!=`）、`abs()`、`log()`、`zscore()`、`rank()`、`fillna()`、`shift()`、`pct_change()`、`cumsum()`、`cumprod()`、`clip()`、`where()`、`mask()`、`rolling()`、`ewm()`、`expanding()`、`mean()`、`std()`、`sum()`、`min()`、`max()` |
+| `pd.GroupBy` | 分组入口 | `__getitem__(col)` → `GroupByColumn` |
+| `pd.GroupByColumn` | 单列分组聚合 | `sum()`、`mean()`、`count()`、`std()`、`min()`、`max()`、`first()`、`last()`、`resample(freq)` → 返回 `(keys, values)` 元组 |
+| `pd.Rolling` | 滚动窗口 | `mean()`、`sum()`、`std()`、`min()`、`max()` |
+| `pd.EWM` | 指数加权 | `mean()` |
+| `pd.Expanding` | 扩展窗口 | `sum()`、`mean()` |
+| `pd.Resampler` | OHLC 重采样 | `first()`、`max()`、`min()`、`last()`（缓存机制 —— 一次 C++ 调用获取全部四个值） |
+| `pd.Index` | 索引包装器 | `get_level_values()` |
+
+### 模块级函数
+
+| 函数 | 描述 |
+|------|------|
+| `pd.concat(items, axis=0)` | 拼接 Series（axis=0）或 DataFrame（axis=1） |
+| `pd.to_datetime(tensor, unit='s')` | 将 epoch 时间戳转换为纳秒级 datetime 张量 |
+| `pd.dt_floor(tensor, freq='1D')` | 将 datetime 张量向下取整到指定频率 |
+
+### 与 pandas 的重要区别
+
+- **所有张量必须为 `torch.double`（float64）**（值列），`torch.long`（int64）（分组键）
+- **GroupBy 返回 `(keys_tensor, values_tensor)` 元组**，而非 pandas 风格的分组 DataFrame
+- **DataFrame 内部为 `Dict[str, Tensor]`** —— 列顺序取决于插入顺序
+- **`to_datetime` 和 `dt_floor` 是模块级函数**，不是 Series 方法
+
+> 完整的类和方法工作示例请参见 `examples/wrapper_api_tour.py`。
+
+## 迁移指南
+
+从 pandas 迁移到 xpandas 非常简单 —— 大部分代码修改是机械性的。
+
+### 第一步：修改 import
+
+```python
+# 修改前
+import pandas as pd
+
+# 修改后
+import xpandas as pd
+import torch
+```
+
+### 第二步：使用 torch.tensor 代替 Python 列表
+
+```python
+# 修改前（pandas）
+df = pd.DataFrame({'price': [100.0, 101.5, 99.8]})
+
+# 修改后（xpandas）
+df = pd.DataFrame({'price': torch.tensor([100.0, 101.5, 99.8], dtype=torch.double)})
+```
+
+### 第三步：适配 GroupBy 结果
+
+```python
+# pandas：返回带有分组索引的 DataFrame/Series
+result = df.groupby('sector')['price'].mean()
+print(result['tech'])  # 基于索引访问
+
+# xpandas：返回 (keys_tensor, values_tensor) 元组
+keys, means = df.groupby('sector')['price'].mean()
+print(keys, means)  # tensor([0, 1, 2]), tensor([100.5, 98.3, 105.1])
+```
+
+### 第四步：使用模块级 datetime 函数
+
+```python
+# pandas
+df['date'] = pd.to_datetime(df['epoch'], unit='s')
+df['date_floor'] = df['date'].dt.floor('1D')
+
+# xpandas
+df['date'] = pd.to_datetime(df['epoch'], unit='s')
+df['date_floor'] = pd.dt_floor(df['date'], freq='1D')
+```
+
+### 常用模式对照表
+
+| pandas | xpandas | 备注 |
+|--------|---------|------|
+| `df['col']` | `df['col']` | ✅ 相同 |
+| `df.col` | `df.col` | ✅ 相同 |
+| `series + series` | `series + series` | ✅ 相同 |
+| `series.rolling(5).mean()` | `series.rolling(5).mean()` | ✅ 相同 |
+| `series.ewm(span=10).mean()` | `series.ewm(span=10).mean()` | ✅ 相同 |
+| `series.fillna(0)` | `series.fillna(0)` | ✅ 相同 |
+| `df.sort_values('col')` | `df.sort_values(by='col')` | ✅ 相同 |
+| `df.merge(other, on='key')` | `df.merge(other, on='key')` | ✅ 相同 |
+| `series.where(cond, -1.0)` | `series.where(cond, tensor)` | ⚠️ `other` 必须是 Tensor |
+| `df.groupby('k')['v'].sum()` | `keys, vals = df.groupby('k')['v'].sum()` | ⚠️ 返回元组 |
+| `pd.to_datetime(s, unit='s')` | `pd.to_datetime(t, unit='s')` | ✅ 相同（模块级） |
+| `s.dt.floor('1D')` | `pd.dt_floor(t, freq='1D')` | ⚠️ 模块级函数 |
+
+> 完整的可运行对照示例请参见 `examples/pandas_migration.py`。
+
+## 常见问题 / FAQ
+
+### Q：出现 `RuntimeError: expected scalar type Double` 怎么办？
+
+所有 xpandas 值列必须为 `torch.double`（float64）。检查张量创建代码：
+
+```python
+# 错误
+t = torch.tensor([1.0, 2.0, 3.0])            # 默认为 float32！
+
+# 正确
+t = torch.tensor([1.0, 2.0, 3.0], dtype=torch.double)
+```
+
+### Q：GroupBy 报 `Long` 张量相关错误？
+
+GroupBy 键列必须为 `torch.long`（int64）：
+
+```python
+df = pd.DataFrame({
+    'group': torch.tensor([1, 2, 1, 2], dtype=torch.long),   # int64 键
+    'value': torch.tensor([10.0, 20.0, 30.0, 40.0], dtype=torch.double)
+})
+keys, sums = df.groupby('group')['value'].sum()
+```
+
+### Q：`where()` 或 `mask()` 传标量参数报错？
+
+与 pandas 不同，xpandas 要求 `other` 参数必须是 Tensor，不能是标量：
+
+```python
+# 错误
+result = series.where(cond, -1.0)
+
+# 正确
+result = series.where(cond, torch.full_like(series.values, -1.0))
+```
+
+### Q：`torch.jit.script()` 编译模型失败怎么办？
+
+1. 确保所有 DataFrame 列都是 Tensor（不是 Python 列表或 NumPy 数组）
+2. GroupBy 键必须为 `torch.long`，值必须为 `torch.double`
+3. 使用 `pd.to_datetime()` 和 `pd.dt_floor()` 作为模块级调用，而非方法调用
+4. 避免在 `@torch.jit.script` 内使用纯 Python 结构（列表推导、f-string 等）
+
+### Q：如何部署到 C++ 推理？
+
+```bash
+# 1. 在 Python 中编译并保存
+python examples/trace_and_save.py  # 生成 alpha.pt
+
+# 2. 构建 C++ 推理二进制
+mkdir build && cd build
+cmake -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')" ..
+make -j
+
+# 3. 运行 —— 无需 Python
+./alpha_infer ../alpha.pt ./libxpandas_ops.so
+```
+
+完整的 C++ 驱动代码请参见 `inference/main.cpp`。
+
+### Q：分组运算比 pandas 慢吗？
+
+是的 —— 这是设计选择。xpandas 分组使用有序 `std::map` 键以保证 TorchScript 中输出顺序的确定性。pandas 使用优化的 Cython 哈希表，速度更快但输出顺序不确定。如果分组性能至关重要，考虑预排序数据或减少分组基数。
+
+### Q：能和 `torch.compile` 一起使用吗？
+
+通过 `ops_meta.py` 中的 FakeTensor 核函数提供了基础支持。但主要编译目标是 `torch.jit.script`。生产部署请使用 TorchScript。
+
+### Q：支持 GPU 吗？
+
+目前所有算子仅支持 CPU。算子通过 PyTorch 调度器分发，因此架构上可以添加 CUDA 核函数，但尚未实现。
+
 
 ## 贡献
 

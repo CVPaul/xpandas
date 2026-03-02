@@ -87,3 +87,86 @@ jobs:
         with:
           name: wheel
           path: dist/*.whl
+
+  benchmark:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install PyTorch (CPU)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install xpandas
+        run: |
+          pip install --no-build-isolation -e ".[dev]"
+
+      - name: Restore benchmark baseline
+        id: cache-baseline
+        uses: actions/cache@v4
+        with:
+          path: .bench_baseline.json
+          key: bench-baseline-${{ runner.os }}-py3.10
+
+      - name: Run benchmarks (JSON)
+        run: |
+          python benchmarks/bench_ops.py --json --n 10000 > .bench_current.json
+
+      - name: Check for performance regression
+        run: |
+          python -c "
+          import json, sys
+          
+          # Load current results
+          with open('.bench_current.json') as f:
+              current = {r['name']: r for r in json.load(f)}
+          
+          # Load baseline if exists
+          try:
+              with open('.bench_baseline.json') as f:
+                  baseline = {r['name']: r for r in json.load(f)}
+          except FileNotFoundError:
+              print('No baseline found — saving current as baseline.')
+              import shutil
+              shutil.copy('.bench_current.json', '.bench_baseline.json')
+              sys.exit(0)
+          
+          # Compare: flag if any op regressed >20%
+          THRESHOLD = 0.20
+          regressions = []
+          for name, cur in current.items():
+              if name not in baseline:
+                  continue
+              base_us = baseline[name]['xpandas_us']
+              cur_us = cur['xpandas_us']
+              if base_us > 0:
+                  pct = (cur_us - base_us) / base_us
+                  status = 'REGRESSION' if pct > THRESHOLD else 'ok'
+                  print(f'{name:25s}  base={base_us:8.1f}us  cur={cur_us:8.1f}us  delta={pct:+.1%}  {status}')
+                  if pct > THRESHOLD:
+                      regressions.append((name, pct))
+          
+          if regressions:
+              print(f'\n{len(regressions)} op(s) regressed >20%:')
+              for name, pct in regressions:
+                  print(f'  {name}: {pct:+.1%}')
+              sys.exit(1)
+          else:
+              print('\nNo performance regressions detected.')
+              # Update baseline with current
+              import shutil
+              shutil.copy('.bench_current.json', '.bench_baseline.json')
+          "
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: .bench_current.json

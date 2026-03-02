@@ -30,6 +30,10 @@ dev = [
     "pytest>=7.0",
     "pandas",   # for reference / comparison tests
 ]
+benchmark = [
+    "polars",
+    "matplotlib",
+]
 
 [project.urls]
 Homepage = "https://github.com/xpandas-project/xpandas"

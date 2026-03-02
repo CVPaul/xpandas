@@ -17,6 +17,10 @@ at::Tensor breakout_signal(
     const at::Tensor& low) {
     TORCH_CHECK(price.dim() == 1 && high.dim() == 1 && low.dim() == 1,
                 "breakout_signal: all inputs must be 1-D");
+    TORCH_CHECK(price.scalar_type() == at::kDouble &&
+                high.scalar_type() == at::kDouble &&
+                low.scalar_type() == at::kDouble,
+                "breakout_signal: all inputs must be float64 (Double)");
     const int64_t n = price.size(0);
     TORCH_CHECK(high.size(0) == n && low.size(0) == n,
                 "breakout_signal: all inputs must have same length");
